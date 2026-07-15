@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 
-export type UserType = "admin" | "membro" | "trainee"
+export type UserType = "admin" | "organizador" | "membro" | "trainee"
 
 export interface User {
   id: string
@@ -10,64 +10,83 @@ export interface User {
   email: string
   cargo: string
   type: UserType
+  eixo?: string
+  photo?: string
+  nota_rotacao?: number
+  pontos_acumulados?: number
 }
 
 interface AuthContextType {
   user: User | null
   isLoading: boolean
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
-  register: (name: string, cargo: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>
+  register: (name: string, cargo: string, email: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>
   logout: () => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
-
-// Simulated user database
-const mockUsers: (User & { password: string })[] = [
-  { id: "1", name: "Admin Info", email: "admin@infoej.com.br", cargo: "Administrador", type: "admin", password: "admin123" },
-  { id: "2", name: "Maria Silva", email: "maria@infoej.com.br", cargo: "Analista de Vendas", type: "membro", password: "123456" },
-  { id: "3", name: "João Trainee", email: "joao@gmail.com", cargo: "Trainee", type: "trainee", password: "123456" },
-]
-
-function getUserTypeByEmail(email: string): UserType {
-  // Emails with @infoej.com.br domain are members, others are trainees
-  if (email.endsWith("@infoej.com.br")) {
-    // Admin check could be based on specific emails
-    if (email.startsWith("admin@")) {
-      return "admin"
-    }
-    return "membro"
-  }
-  return "trainee"
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Check for stored session
+    const token = localStorage.getItem("token")
     const storedUser = localStorage.getItem("currentUser")
-    if (storedUser) {
-      setUser(JSON.parse(storedUser))
+
+    const validateToken = async () => {
+      if (token) {
+        try {
+          const res = await fetch("/api/auth/me", {
+            headers: {
+              "Authorization": `Bearer ${token}`
+            }
+          })
+          if (res.ok) {
+            const userData = await res.json()
+            setUser(userData)
+            localStorage.setItem("currentUser", JSON.stringify(userData))
+          } else {
+            // Token is invalid or expired, log out
+            logout()
+          }
+        } catch (e) {
+          console.error("Erro ao validar token:", e)
+          if (storedUser) {
+            setUser(JSON.parse(storedUser))
+          }
+        }
+      }
+      setIsLoading(false)
     }
-    setIsLoading(false)
+
+    validateToken()
   }, [])
 
-  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 500))
+  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string; user?: User }> => {
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      })
 
-    const foundUser = mockUsers.find(u => u.email === email && u.password === password)
-    
-    if (foundUser) {
-      const { password: _, ...userWithoutPassword } = foundUser
-      setUser(userWithoutPassword)
-      localStorage.setItem("currentUser", JSON.stringify(userWithoutPassword))
-      return { success: true }
+      if (response.ok) {
+        const data = await response.json()
+        setUser(data.user)
+        localStorage.setItem("token", data.access_token)
+        localStorage.setItem("currentUser", JSON.stringify(data.user))
+        return { success: true, user: data.user }
+      } else {
+        const errorData = await response.json()
+        return { success: false, error: errorData.detail || "Email ou senha incorretos" }
+      }
+    } catch (error) {
+      console.error("Erro de login:", error)
+      return { success: false, error: "Erro de conexão com o servidor" }
     }
-
-    return { success: false, error: "Email ou senha incorretos" }
   }
 
   const register = async (
@@ -75,36 +94,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     cargo: string, 
     email: string, 
     password: string
-  ): Promise<{ success: boolean; error?: string }> => {
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 500))
+  ): Promise<{ success: boolean; error?: string; user?: User }> => {
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name, cargo, email, password }),
+      })
 
-    // Check if email already exists
-    if (mockUsers.find(u => u.email === email)) {
-      return { success: false, error: "Este email já está cadastrado" }
+      if (response.ok) {
+        // Log in immediately after successful registration
+        return await login(email, password)
+      } else {
+        const errorData = await response.json()
+        return { success: false, error: errorData.detail || "Erro ao realizar cadastro" }
+      }
+    } catch (error) {
+      console.error("Erro de cadastro:", error)
+      return { success: false, error: "Erro de conexão com o servidor" }
     }
-
-    const userType = getUserTypeByEmail(email)
-    const newUser: User = {
-      id: `user-${Date.now()}`,
-      name,
-      email,
-      cargo,
-      type: userType,
-    }
-
-    // In a real app, this would be saved to a database
-    mockUsers.push({ ...newUser, password })
-    
-    setUser(newUser)
-    localStorage.setItem("currentUser", JSON.stringify(newUser))
-    
-    return { success: true }
   }
 
   const logout = () => {
     setUser(null)
     localStorage.removeItem("currentUser")
+    localStorage.removeItem("token")
   }
 
   return (

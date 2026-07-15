@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,7 +18,7 @@ import { X, FileText, Link as LinkIcon, Video, Plus, Trash2 } from "lucide-react
 export interface ContentItem {
   id: string
   name: string
-  type: "membro" | "trainee"
+  type: "membro" | "trainee" | "pluginfo"
   eixo: string
   text?: string
   documents?: { name: string; url: string }[]
@@ -29,12 +29,23 @@ interface ContentCardProps {
   content: ContentItem
   onClose: () => void
   onSave: (content: ContentItem) => void
+  userType?: string
 }
 
-export function ContentCard({ content, onClose, onSave }: ContentCardProps) {
+export function ContentCard({ content, onClose, onSave, userType = "admin" }: ContentCardProps) {
   const [editedContent, setEditedContent] = useState<ContentItem>(content)
   const [newDocument, setNewDocument] = useState({ name: "", url: "" })
   const [newVideo, setNewVideo] = useState("")
+
+  useEffect(() => {
+    if (userType === "organizador") {
+      setEditedContent(prev => ({
+        ...prev,
+        type: "pluginfo",
+        eixo: "pluginfo"
+      }))
+    }
+  }, [userType])
 
   const handleSave = () => {
     onSave(editedContent)
@@ -78,7 +89,9 @@ export function ContentCard({ content, onClose, onSave }: ContentCardProps) {
   return (
     <Card className="border-primary/30 bg-card">
       <CardHeader className="flex flex-row items-center justify-between pb-4">
-        <CardTitle className="text-lg text-foreground">Editar Conteúdo</CardTitle>
+        <CardTitle className="text-lg text-foreground">
+          {content.id.startsWith("content-new-") ? "Adicionar Conteúdo" : "Editar Conteúdo"}
+        </CardTitle>
         <Button variant="ghost" size="icon" onClick={onClose}>
           <X className="h-4 w-4" />
         </Button>
@@ -98,43 +111,59 @@ export function ContentCard({ content, onClose, onSave }: ContentCardProps) {
         </div>
 
         {/* Tipo de Conteúdo */}
-        <div className="space-y-2">
-          <Label>Tipo de Conteúdo</Label>
-          <Select
-            value={editedContent.type}
-            onValueChange={(value: "membro" | "trainee") =>
-              setEditedContent({ ...editedContent, type: value })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Selecione o tipo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="membro">Membro</SelectItem>
-              <SelectItem value="trainee">Trainee</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {userType !== "organizador" ? (
+          <div className="space-y-2">
+            <Label>Tipo de Conteúdo</Label>
+            <Select
+              value={editedContent.type}
+              onValueChange={(value: "membro" | "trainee" | "pluginfo") =>
+                setEditedContent({ ...editedContent, type: value })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="membro">Membro</SelectItem>
+                <SelectItem value="trainee">Trainee</SelectItem>
+                <SelectItem value="pluginfo">PlugInfo</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label>Tipo de Conteúdo</Label>
+            <Input value="PlugInfo" disabled className="bg-secondary" />
+          </div>
+        )}
 
         {/* Eixo */}
-        <div className="space-y-2">
-          <Label>Eixo de Comercial</Label>
-          <Select
-            value={editedContent.eixo}
-            onValueChange={(value) =>
-              setEditedContent({ ...editedContent, eixo: value })
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Selecione o eixo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="vendas">Vendas</SelectItem>
-              <SelectItem value="conexoes">Conexões</SelectItem>
-              <SelectItem value="experiencia">Experiência do Consumidor</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {userType !== "organizador" ? (
+          <div className="space-y-2">
+            <Label>Eixo de Comercial</Label>
+            <Select
+              value={editedContent.eixo}
+              onValueChange={(value) =>
+                setEditedContent({ ...editedContent, eixo: value })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o eixo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="vendas">Vendas</SelectItem>
+                <SelectItem value="conexoes">Conexões</SelectItem>
+                <SelectItem value="experiencia">Experiência do Consumidor</SelectItem>
+                <SelectItem value="pluginfo">PlugInfo</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label>Eixo de Comercial</Label>
+            <Input value="PlugInfo" disabled className="bg-secondary" />
+          </div>
+        )}
 
         {/* Texto */}
         <div className="space-y-2">
@@ -185,7 +214,7 @@ export function ContentCard({ content, onClose, onSave }: ContentCardProps) {
               onChange={(e) =>
                 setNewDocument({ ...newDocument, name: e.target.value })
               }
-              className="flex-1"
+              className="flex-1 text-xs"
             />
             <Input
               placeholder="URL do documento"
@@ -193,7 +222,7 @@ export function ContentCard({ content, onClose, onSave }: ContentCardProps) {
               onChange={(e) =>
                 setNewDocument({ ...newDocument, url: e.target.value })
               }
-              className="flex-1"
+              className="flex-1 text-xs"
             />
             <Button variant="outline" size="icon" onClick={addDocument}>
               <Plus className="h-4 w-4" />
@@ -231,7 +260,7 @@ export function ContentCard({ content, onClose, onSave }: ContentCardProps) {
               placeholder="URL do vídeo (YouTube, Vimeo, etc.)"
               value={newVideo}
               onChange={(e) => setNewVideo(e.target.value)}
-              className="flex-1"
+              className="flex-1 text-xs"
             />
             <Button variant="outline" size="icon" onClick={addVideo}>
               <Plus className="h-4 w-4" />

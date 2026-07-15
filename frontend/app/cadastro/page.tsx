@@ -44,9 +44,11 @@ export default function CadastroPage() {
 
     const result = await register(name, cargo, email, password)
 
-    if (result.success) {
-      // Redirect based on email domain
-      if (email.endsWith("@infoej.com.br")) {
+    if (result.success && result.user) {
+      // Redirect based on user type returned from backend
+      if (result.user.type === "admin") {
+        router.push("/")
+      } else if (result.user.type === "membro") {
         router.push("/membros")
       } else {
         router.push("/trainees")

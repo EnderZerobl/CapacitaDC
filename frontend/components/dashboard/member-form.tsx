@@ -1,8 +1,7 @@
 "use client"
 
 import React from "react"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -21,9 +20,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { UserPlus, X } from "lucide-react"
+import { UserPlus } from "lucide-react"
 
-type Cargo = "gerente" | "membro" | "trainee"
+type Cargo = "admin" | "organizador" | "gerente" | "membro" | "trainee"
 type Eixo = "vendas" | "conexoes" | "experiencia"
 
 interface MemberFormData {
@@ -35,9 +34,10 @@ interface MemberFormData {
 
 interface MemberFormProps {
   onSubmit: (data: MemberFormData) => void
+  userType?: string
 }
 
-export function MemberForm({ onSubmit }: MemberFormProps) {
+export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
@@ -45,10 +45,18 @@ export function MemberForm({ onSubmit }: MemberFormProps) {
   const [eixo, setEixo] = useState<Eixo | "">("")
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  // Automatically select trainee for organizador
+  useEffect(() => {
+    if (userType === "organizador") {
+      setCargo("trainee")
+      setEixo("")
+    }
+  }, [userType, open])
+
   const resetForm = () => {
     setName("")
     setEmail("")
-    setCargo("")
+    setCargo(userType === "organizador" ? "trainee" : "")
     setEixo("")
     setErrors({})
   }
@@ -107,14 +115,16 @@ export function MemberForm({ onSubmit }: MemberFormProps) {
       <DialogTrigger asChild>
         <Button className="gap-2">
           <UserPlus className="h-4 w-4" />
-          Cadastrar Membro
+          {userType === "organizador" ? "Cadastrar Trainee" : "Cadastrar Membro"}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md bg-card border-border">
         <DialogHeader>
-          <DialogTitle className="text-foreground">Cadastrar Novo Membro</DialogTitle>
+          <DialogTitle className="text-foreground">
+            {userType === "organizador" ? "Cadastrar Novo Trainee" : "Cadastrar Novo Membro"}
+          </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            Preencha as informações para cadastrar um novo membro na equipe comercial.
+            Preencha as informações para cadastrar um novo perfil no sistema.
           </DialogDescription>
         </DialogHeader>
 
@@ -156,32 +166,36 @@ export function MemberForm({ onSubmit }: MemberFormProps) {
           </div>
 
           {/* Cargo */}
-          <div className="space-y-2">
-            <Label htmlFor="cargo" className="text-foreground">
-              Cargo
-            </Label>
-            <Select
-              value={cargo}
-              onValueChange={(value: Cargo) => {
-                setCargo(value)
-                if (value === "trainee") {
-                  setEixo("")
-                }
-              }}
-            >
-              <SelectTrigger className="bg-secondary border-border text-foreground">
-                <SelectValue placeholder="Selecione o cargo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="gerente">Gerente</SelectItem>
-                <SelectItem value="membro">Membro</SelectItem>
-                <SelectItem value="trainee">Trainee</SelectItem>
-              </SelectContent>
-            </Select>
-            {errors.cargo && (
-              <p className="text-sm text-destructive">{errors.cargo}</p>
-            )}
-          </div>
+          {userType !== "organizador" && (
+            <div className="space-y-2">
+              <Label htmlFor="cargo" className="text-foreground">
+                Cargo
+              </Label>
+              <Select
+                value={cargo}
+                onValueChange={(value: Cargo) => {
+                  setCargo(value)
+                  if (value === "trainee" || value === "admin" || value === "organizador") {
+                    setEixo("")
+                  }
+                }}
+              >
+                <SelectTrigger className="bg-secondary border-border text-foreground">
+                  <SelectValue placeholder="Selecione o cargo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Administrador</SelectItem>
+                  <SelectItem value="organizador">Organizador do PlugInfo</SelectItem>
+                  <SelectItem value="gerente">Gerente</SelectItem>
+                  <SelectItem value="membro">Membro</SelectItem>
+                  <SelectItem value="trainee">Trainee</SelectItem>
+                </SelectContent>
+              </Select>
+              {errors.cargo && (
+                <p className="text-sm text-destructive">{errors.cargo}</p>
+              )}
+            </div>
+          )}
 
           {/* Eixo - apenas se cargo for "membro" ou "gerente" */}
           {(cargo === "membro" || cargo === "gerente") && (

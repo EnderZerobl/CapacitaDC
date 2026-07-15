@@ -28,14 +28,12 @@ export default function LoginPage() {
 
     const result = await login(email, password)
 
-    if (result.success) {
-      // Redirect based on user type (determined by email domain)
-      if (email.endsWith("@infoej.com.br")) {
-        if (email.startsWith("admin@")) {
-          router.push("/")
-        } else {
-          router.push("/membros")
-        }
+    if (result.success && result.user) {
+      // Redirect based on user type returned from backend
+      if (result.user.type === "admin") {
+        router.push("/")
+      } else if (result.user.type === "membro") {
+        router.push("/membros")
       } else {
         router.push("/trainees")
       }

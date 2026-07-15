@@ -3,3 +3,17 @@ node_modules
 .env
 
 /generated/prisma
+
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/app/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+
+# Next.js
+frontend/.next/
+frontend/out/
