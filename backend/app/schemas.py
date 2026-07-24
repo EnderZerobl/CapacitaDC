@@ -24,6 +24,7 @@ class UserOut(UserBase):
     id: str
     nota_rotacao: Optional[float] = None
     pontos_acumulados: int = 0
+    must_change_password: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -78,9 +79,13 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     user: UserOut
+    must_change_password: bool = False
 
 class TokenData(BaseModel):
     email: Optional[str] = None
+
+class ChangePasswordRequest(BaseModel):
+    new_password: str
 
 # --- Game & Node Graph Schemas ---
 

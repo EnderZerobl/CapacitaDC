@@ -125,6 +125,7 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             Preencha as informações para cadastrar um novo perfil no sistema.
+            A senha padrão será <span className="font-semibold text-foreground">123456</span> e deverá ser alterada no primeiro acesso.
           </DialogDescription>
         </DialogHeader>
 

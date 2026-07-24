@@ -14,13 +14,15 @@ export interface User {
   photo?: string
   nota_rotacao?: number
   pontos_acumulados?: number
+  must_change_password?: boolean
 }
 
 interface AuthContextType {
   user: User | null
   isLoading: boolean
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; user?: User; must_change_password?: boolean }>
   register: (name: string, cargo: string, email: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>
+  changePassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
 }
 
@@ -63,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     validateToken()
   }, [])
 
-  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string; user?: User }> => {
+  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string; user?: User; must_change_password?: boolean }> => {
     try {
       const response = await fetch("/api/auth/login", {
         method: "POST",
@@ -78,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(data.user)
         localStorage.setItem("token", data.access_token)
         localStorage.setItem("currentUser", JSON.stringify(data.user))
-        return { success: true, user: data.user }
+        return { success: true, user: data.user, must_change_password: data.must_change_password }
       } else {
         const errorData = await response.json()
         return { success: false, error: errorData.detail || "Email ou senha incorretos" }
@@ -117,6 +119,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const changePassword = async (newPassword: string): Promise<{ success: boolean; error?: string }> => {
+    const token = localStorage.getItem("token")
+    if (!token) return { success: false, error: "Não autenticado" }
+
+    try {
+      const response = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ new_password: newPassword }),
+      })
+
+      if (response.ok) {
+        // Update local user state
+        if (user) {
+          const updatedUser = { ...user, must_change_password: false }
+          setUser(updatedUser)
+          localStorage.setItem("currentUser", JSON.stringify(updatedUser))
+        }
+        return { success: true }
+      } else {
+        const errorData = await response.json()
+        return { success: false, error: errorData.detail || "Erro ao alterar senha" }
+      }
+    } catch (error) {
+      console.error("Erro ao alterar senha:", error)
+      return { success: false, error: "Erro de conexão com o servidor" }
+    }
+  }
+
   const logout = () => {
     setUser(null)
     localStorage.removeItem("currentUser")
@@ -124,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, changePassword, logout }}>
       {children}
     </AuthContext.Provider>
   )

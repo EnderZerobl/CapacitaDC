@@ -84,12 +84,27 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": user
+        "user": user,
+        "must_change_password": user.must_change_password
     }
 
 @app.get("/api/auth/me", response_model=schemas.UserOut)
 def read_current_user(current_user: models.User = Depends(get_current_user)):
     return current_user
+
+@app.post("/api/auth/change-password")
+def change_password(
+    req: schemas.ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    if len(req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="A senha deve ter pelo menos 6 caracteres")
+    
+    current_user.password_hash = get_password_hash(req.new_password)
+    current_user.must_change_password = False
+    db.commit()
+    return {"detail": "Senha alterada com sucesso"}
 
 
 # --- Users/Members Management Endpoints ---
@@ -156,7 +171,8 @@ def create_member(
         eixo=eixo_label,
         photo=user_in.photo or "",
         nota_rotacao=0.0 if user_in.type == "trainee" else None,
-        pontos_acumulados=0
+        pontos_acumulados=0,
+        must_change_password=True
     )
 
     db.add(new_user)

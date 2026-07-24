@@ -19,6 +19,7 @@ class User(Base):
     photo = Column(String, nullable=True, default="")
     nota_rotacao = Column(Float, nullable=True)
     pontos_acumulados = Column(Integer, default=0, nullable=False)
+    must_change_password = Column(Boolean, default=False, nullable=False)
 
     # Relationships
     node_progress = relationship("UserNodeProgress", back_populates="user", cascade="all, delete-orphan")
