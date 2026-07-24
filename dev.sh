@@ -50,6 +50,10 @@ echo "📥 Instalando dependências do backend..."
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
 
+if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+    cp .env.example .env
+fi
+
 # 4. Criar tabelas e popular dados iniciais (seed)
 echo "🌱 Inicializando e populando o banco de dados..."
 .venv/bin/python -m app.seed
