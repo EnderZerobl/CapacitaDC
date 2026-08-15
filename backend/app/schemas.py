@@ -24,11 +24,21 @@ class UserOut(UserBase):
     id: str
     nota_rotacao: Optional[float] = None
     pontos_acumulados: int = 0
+    rotacao: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    cargo: Optional[str] = None
+    type: Optional[str] = None
+    eixo: Optional[str] = None
+    password: Optional[str] = None
+
 class TraineeUpdate(BaseModel):
     notaRotacao: Optional[float] = None
+    rotacao: Optional[int] = None  # 1 ou 2
 
 # --- Document Schemas ---
 class DocumentBase(BaseModel):
@@ -104,15 +114,18 @@ class QuestionOut(BaseModel):
 class TrainingNodeOut(BaseModel):
     id: str
     name: str
-    type: str  # "material", "game"
+    type: str  # "activity", "material", "game"
     reference_id: Optional[str] = None
+    activity_id: Optional[str] = None
     eixo: str
     prerequisite_node_id: Optional[str] = None
     x_pos: Optional[float] = 0.0
     y_pos: Optional[float] = 0.0
+    order_index: int = 0
     questions: List[QuestionOut] = []
     is_released: bool = False
     released_at: Optional[datetime] = None
+    deadline: Optional[datetime] = None
     released_by: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -125,6 +138,28 @@ class TrainingNodeGraphOut(TrainingNodeOut):
 class NodeReleaseUpdate(BaseModel):
     is_released: bool
     released_at: Optional[datetime] = None  # None = liberar imediatamente
+
+class OptionCreate(BaseModel):
+    text: str
+    is_correct: bool = False
+    score: int = 0
+    feedback: Optional[str] = ""
+
+class QuestionCreate(BaseModel):
+    text: str
+    explanation: Optional[str] = ""
+    options: List[OptionCreate] = []
+
+class TrainingNodeCreate(BaseModel):
+    name: Optional[str] = None
+    type: str  # "activity" | "material" | "game"
+    eixo: str
+    activity_id: Optional[str] = None
+    reference_id: Optional[str] = None
+    prerequisite_node_id: Optional[str] = None
+    is_released: bool = False
+    deadline: Optional[datetime] = None
+    questions: List[QuestionCreate] = []
 
 class GameSubmitRequest(BaseModel):
     score: int
@@ -139,3 +174,107 @@ class LeaderboardEntry(BaseModel):
     pontos_acumulados: int = 0
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- Activity & Submission Schemas ---
+
+class ActivityCreate(BaseModel):
+    title: str
+    description: Optional[str] = ""
+    eixo: str  # "trainee", "vendas", "conexoes", "experiencia", "pluginfo", "all"
+    accepts_file: bool = True
+    deadline: Optional[datetime] = None
+    material_id: Optional[str] = None
+    weight: float = 1.0
+
+class ActivityUpdate(BaseModel):
+    is_open: Optional[bool] = None
+    deadline: Optional[datetime] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    accepts_file: Optional[bool] = None
+    material_id: Optional[str] = None
+    weight: Optional[float] = None
+
+class ActivitySubmissionOut(BaseModel):
+    id: str
+    activity_id: str
+    user_id: str
+    file_url: Optional[str] = None
+    comment: Optional[str] = ""
+    submitted_at: Optional[datetime] = None
+    grade: Optional[float] = None
+    feedback: Optional[str] = ""
+    user_name: Optional[str] = None  # populated from join
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ActivityOut(BaseModel):
+    id: str
+    title: str
+    description: Optional[str] = ""
+    eixo: str
+    accepts_file: bool
+    deadline: Optional[datetime] = None
+    is_open: bool
+    weight: float = 1.0
+    created_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+    material_id: Optional[str] = None
+    # computed: effective_open (deadline check)
+    effective_open: bool = True
+    submission_count: int = 0
+    my_submission: Optional[ActivitySubmissionOut] = None  # present for trainee/member requests
+
+    model_config = ConfigDict(from_attributes=True)
+
+class SubmissionCreate(BaseModel):
+    file_url: Optional[str] = None
+    comment: Optional[str] = ""
+
+class SubmissionGrade(BaseModel):
+    grade: float
+    feedback: Optional[str] = ""
+
+
+# --- Profile & Grades Schemas ---
+
+class NodeProgressOut(BaseModel):
+    node_id: str
+    node_name: str
+    node_type: str
+    completed: bool
+    score: int
+    completed_at: Optional[datetime] = None
+
+class UserProfileOut(BaseModel):
+    id: str
+    name: str
+    email: str
+    cargo: str
+    type: str
+    eixo: Optional[str] = None
+    rotacao: Optional[int] = None
+    nota_rotacao: Optional[float] = None
+    pontos_acumulados: int = 0
+    node_progress: List[NodeProgressOut] = []
+    activity_submissions: List[ActivitySubmissionOut] = []
+
+class NodeOrderUpdate(BaseModel):
+    order_index: int
+
+class GradeRow(BaseModel):
+    id: str
+    name: str
+    email: str
+    cargo: str
+    type: str
+    eixo: Optional[str] = None
+    rotacao: Optional[int] = None
+    nota_rotacao: Optional[float] = None
+    pontos_acumulados: int = 0
+    nodes_completed: int = 0
+    nodes_total: int = 0
+    activities_submitted: int = 0
+    activities_graded: int = 0
+    avg_activity_grade: Optional[float] = None

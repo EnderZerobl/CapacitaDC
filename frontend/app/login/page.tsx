@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, LayoutGrid, AlertCircle } from "lucide-react"
+import { Loader2, LayoutGrid, AlertCircle, Eye, EyeOff } from "lucide-react"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -20,6 +20,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -29,8 +30,7 @@ export default function LoginPage() {
     const result = await login(email, password)
 
     if (result.success && result.user) {
-      // Redirect based on user type returned from backend
-      if (result.user.type === "admin") {
+      if (result.user.type === "admin" || result.user.type === "organizador") {
         router.push("/")
       } else if (result.user.type === "membro") {
         router.push("/membros")
@@ -98,15 +98,26 @@ export default function LoginPage() {
                     Esqueceu a senha?
                   </Link>
                 </div>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="bg-input border-border text-foreground placeholder:text-muted-foreground"
-                />
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="bg-input border-border text-foreground placeholder:text-muted-foreground pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    tabIndex={-1}
+                    aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
             </CardContent>
 
@@ -127,18 +138,6 @@ export default function LoginPage() {
               </Button>
             </CardFooter>
           </form>
-        </Card>
-
-        {/* Demo credentials */}
-        <Card className="bg-card/50 border-border">
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground text-center mb-2">Credenciais de demonstração:</p>
-            <div className="text-xs text-muted-foreground space-y-1">
-              <p><span className="text-foreground font-medium">Admin:</span> admin@infoej.com.br / admin123</p>
-              <p><span className="text-foreground font-medium">Membro:</span> maria@infoej.com.br / 123456</p>
-              <p><span className="text-foreground font-medium">Trainee:</span> joao@gmail.com / 123456</p>
-            </div>
-          </CardContent>
         </Card>
       </div>
     </main>

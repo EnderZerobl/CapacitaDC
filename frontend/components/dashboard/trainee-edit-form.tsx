@@ -11,36 +11,51 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Pencil, X, Save } from "lucide-react"
 
 interface TraineeEditFormProps {
   traineeId: string
   traineeName: string
   notaRotacao?: number
-  onSave: (data: { notaRotacao?: number }) => void
+  rotacao?: number | null
+  onSave: (data: { notaRotacao?: number; rotacao?: number }) => void
 }
 
 export function TraineeEditForm({
   traineeId,
   traineeName,
   notaRotacao: initialNota,
+  rotacao: initialRotacao,
   onSave,
 }: TraineeEditFormProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [notaRotacao, setNotaRotacao] = useState<string>(
     initialNota !== undefined ? initialNota.toString() : ""
   )
+  const [rotacao, setRotacao] = useState<string>(
+    initialRotacao ? initialRotacao.toString() : ""
+  )
 
   const handleSave = () => {
     const nota = notaRotacao ? parseFloat(notaRotacao) : undefined
+    const rot = rotacao ? parseInt(rotacao) : undefined
     onSave({
       notaRotacao: nota && !isNaN(nota) ? Math.min(10, Math.max(0, nota)) : undefined,
+      rotacao: rot && !isNaN(rot) ? rot : undefined,
     })
     setIsOpen(false)
   }
 
   const handleCancel = () => {
     setNotaRotacao(initialNota !== undefined ? initialNota.toString() : "")
+    setRotacao(initialRotacao ? initialRotacao.toString() : "")
     setIsOpen(false)
   }
 
@@ -63,6 +78,20 @@ export function TraineeEditForm({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          {/* Rotação */}
+          <div className="space-y-2">
+            <Label className="text-foreground">Rotação</Label>
+            <Select value={rotacao} onValueChange={setRotacao}>
+              <SelectTrigger className="bg-secondary border-border text-foreground">
+                <SelectValue placeholder="Selecione a rotação" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">Rotação 1</SelectItem>
+                <SelectItem value="2">Rotação 2</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Nota da Rotação */}
           <div className="space-y-2">
             <Label htmlFor="nota" className="text-foreground">

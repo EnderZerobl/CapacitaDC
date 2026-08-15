@@ -13,8 +13,11 @@ interface Question {
 interface TrainingNode {
   id: string
   name: string
-  type: "material" | "game"
-  reference_id?: string
+  type: "activity" | "material" | "game"
+  reference_id?: string | null
+  activity_id?: string | null
+  deadline?: string | null
+  order_index?: number
   eixo: string
   prerequisite_node_id?: string
   x_pos: number
@@ -35,6 +38,20 @@ interface TrainingPathProps {
 }
 
 export function TrainingPath({ nodes, onSelectNode, highlighted = false, axisName }: TrainingPathProps) {
+  // Sort and dynamically position nodes by order_index in a snake layout
+  const sortedNodes = [...nodes].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+  const processedNodes = sortedNodes.map((node, index) => {
+    const xPattern = [0, 1, -1]
+    const x_pos = xPattern[index % 3]
+    const y_pos = index * 1.5
+    return {
+      ...node,
+      x_pos,
+      y_pos,
+      prerequisite_node_id: index > 0 ? sortedNodes[index - 1].id : undefined
+    }
+  })
+
   // Constants for fixed width 360px centering
   const containerWidth = 360
   const centerX = containerWidth / 2
@@ -43,11 +60,11 @@ export function TrainingPath({ nodes, onSelectNode, highlighted = false, axisNam
   const startY = 40
 
   // Calculate container height dynamically
-  const maxY = nodes.reduce((max, node) => (node.y_pos > max ? node.y_pos : max), 0)
+  const maxY = processedNodes.reduce((max, node) => (node.y_pos > max ? node.y_pos : max), 0)
   const containerHeight = maxY * stepY + startY + 80
 
   // Helper to get coordinates
-  const getNodeCoords = (node: TrainingNode) => {
+  const getNodeCoords = (node: any) => {
     const x = centerX + node.x_pos * stepX
     const y = node.y_pos * stepY + startY
     return { x, y }
@@ -80,9 +97,9 @@ export function TrainingPath({ nodes, onSelectNode, highlighted = false, axisNam
       >
         {/* SVG Connecting Lines */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
-          {nodes.map((node) => {
+          {processedNodes.map((node) => {
             if (!node.prerequisite_node_id) return null
-            const prereq = nodes.find((n) => n.id === node.prerequisite_node_id)
+            const prereq = processedNodes.find((n) => n.id === node.prerequisite_node_id)
             if (!prereq) return null
 
             const start = getNodeCoords(prereq)
@@ -113,7 +130,7 @@ export function TrainingPath({ nodes, onSelectNode, highlighted = false, axisNam
         </svg>
 
         {/* Nodes Buttons */}
-        {nodes.map((node) => {
+        {processedNodes.map((node) => {
           const { x, y } = getNodeCoords(node)
           
           let nodeBg = "bg-muted text-muted-foreground border-border"

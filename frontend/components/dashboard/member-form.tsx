@@ -20,15 +20,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { UserPlus } from "lucide-react"
+import { UserPlus, Eye, EyeOff } from "lucide-react"
 
-type Cargo = "admin" | "organizador" | "gerente" | "membro" | "trainee"
+type Cargo = "admin" | "organizador" | "membro" | "trainee"
 type Eixo = "vendas" | "conexoes" | "experiencia"
 
 interface MemberFormData {
   name: string
   email: string
   cargo: Cargo
+  password?: string
   eixo?: Eixo
 }
 
@@ -41,9 +42,11 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [cargo, setCargo] = useState<Cargo | "">("")
   const [eixo, setEixo] = useState<Eixo | "">("")
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [showPassword, setShowPassword] = useState(false)
 
   // Automatically select trainee for organizador
   useEffect(() => {
@@ -56,6 +59,7 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
   const resetForm = () => {
     setName("")
     setEmail("")
+    setPassword("")
     setCargo(userType === "organizador" ? "trainee" : "")
     setEixo("")
     setErrors({})
@@ -74,12 +78,18 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
       newErrors.email = "Email inválido"
     }
 
+    if (!password) {
+      newErrors.password = "Senha é obrigatória"
+    } else if (password.length < 6) {
+      newErrors.password = "A senha deve ter no mínimo 6 caracteres"
+    }
+
     if (!cargo) {
       newErrors.cargo = "Cargo é obrigatório"
     }
 
-    if ((cargo === "membro" || cargo === "gerente") && !eixo) {
-      newErrors.eixo = "Eixo é obrigatório para membros e gerentes"
+    if (cargo === "membro" && !eixo) {
+      newErrors.eixo = "Eixo é obrigatório para membros"
     }
 
     setErrors(newErrors)
@@ -95,7 +105,8 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
       name: name.trim(),
       email: email.trim(),
       cargo: cargo as Cargo,
-      ...((cargo === "membro" || cargo === "gerente") && eixo ? { eixo: eixo as Eixo } : {}),
+      password: password,
+      ...(cargo === "membro" && eixo ? { eixo: eixo as Eixo } : {}),
     }
 
     onSubmit(formData)
@@ -165,6 +176,35 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
             )}
           </div>
 
+          {/* Senha */}
+          <div className="space-y-2">
+            <Label htmlFor="password-field" className="text-foreground">
+              Senha
+            </Label>
+            <div className="relative">
+              <Input
+                id="password-field"
+                type={showPassword ? "text" : "password"}
+                placeholder="Digite a senha de acesso"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="bg-secondary border-border text-foreground placeholder:text-muted-foreground pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                tabIndex={-1}
+                aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            {errors.password && (
+              <p className="text-sm text-destructive">{errors.password}</p>
+            )}
+          </div>
+
           {/* Cargo */}
           {userType !== "organizador" && (
             <div className="space-y-2">
@@ -186,7 +226,6 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
                 <SelectContent>
                   <SelectItem value="admin">Administrador</SelectItem>
                   <SelectItem value="organizador">Organizador do PlugInfo</SelectItem>
-                  <SelectItem value="gerente">Gerente</SelectItem>
                   <SelectItem value="membro">Membro</SelectItem>
                   <SelectItem value="trainee">Trainee</SelectItem>
                 </SelectContent>
@@ -197,8 +236,8 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
             </div>
           )}
 
-          {/* Eixo - apenas se cargo for "membro" ou "gerente" */}
-          {(cargo === "membro" || cargo === "gerente") && (
+          {/* Eixo - apenas se cargo for "membro" */}
+          {cargo === "membro" && (
             <div className="space-y-2">
               <Label htmlFor="eixo" className="text-foreground">
                 Eixo

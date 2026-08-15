@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { X, FileText, Link as LinkIcon, Video, Plus, Trash2 } from "lucide-react"
+import { X, FileText, Video, Plus, Trash2, Upload, Loader2, Paperclip } from "lucide-react"
 
 export interface ContentItem {
   id: string
@@ -34,15 +34,17 @@ interface ContentCardProps {
 
 export function ContentCard({ content, onClose, onSave, userType = "admin" }: ContentCardProps) {
   const [editedContent, setEditedContent] = useState<ContentItem>(content)
-  const [newDocument, setNewDocument] = useState({ name: "", url: "" })
   const [newVideo, setNewVideo] = useState("")
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState("")
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (userType === "organizador") {
       setEditedContent(prev => ({
         ...prev,
-        type: "pluginfo",
-        eixo: "pluginfo"
+        type: "trainee",
+        eixo: "trainee"
       }))
     }
   }, [userType])
@@ -52,14 +54,52 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
     onClose()
   }
 
-  const addDocument = () => {
-    if (newDocument.name && newDocument.url) {
-      setEditedContent({
-        ...editedContent,
-        documents: [...(editedContent.documents || []), newDocument],
-      })
-      setNewDocument({ name: "", url: "" })
+  // ---------- File upload ----------
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    setUploading(true)
+    setUploadError("")
+
+    const token = localStorage.getItem("token")
+    const uploaded: { name: string; url: string }[] = []
+
+    for (const file of Array.from(files)) {
+      const formData = new FormData()
+      formData.append("file", file)
+
+      try {
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        })
+
+        if (!res.ok) {
+          const err = await res.json()
+          setUploadError(err.detail || "Erro ao fazer upload do arquivo.")
+          break
+        }
+
+        const data = await res.json()
+        uploaded.push({ name: data.name, url: data.url })
+      } catch {
+        setUploadError("Erro de conexão ao fazer upload.")
+        break
+      }
     }
+
+    if (uploaded.length > 0) {
+      setEditedContent(prev => ({
+        ...prev,
+        documents: [...(prev.documents || []), ...uploaded],
+      }))
+    }
+
+    setUploading(false)
+    // Reset input so the same file can be re-uploaded if needed
+    if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
   const removeDocument = (index: number) => {
@@ -69,6 +109,7 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
     })
   }
 
+  // ---------- Videos ----------
   const addVideo = () => {
     if (newVideo) {
       setEditedContent({
@@ -116,52 +157,61 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
             <Label>Tipo de Conteúdo</Label>
             <Select
               value={editedContent.type}
-              onValueChange={(value: "membro" | "trainee" | "pluginfo") =>
-                setEditedContent({ ...editedContent, type: value })
-              }
+              onValueChange={(value: "membro" | "trainee" | "pluginfo") => {
+                setEditedContent({
+                  ...editedContent,
+                  type: value,
+                  eixo: value === "trainee" ? "trainee" : "vendas"
+                })
+              }}
             >
-              <SelectTrigger>
+              <SelectTrigger className="bg-secondary text-foreground border-border">
                 <SelectValue placeholder="Selecione o tipo" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="membro">Membro</SelectItem>
                 <SelectItem value="trainee">Trainee</SelectItem>
-                <SelectItem value="pluginfo">PlugInfo</SelectItem>
               </SelectContent>
             </Select>
           </div>
         ) : (
           <div className="space-y-2">
             <Label>Tipo de Conteúdo</Label>
-            <Input value="PlugInfo" disabled className="bg-secondary" />
+            <Input value="Trainee" disabled className="bg-secondary border-border" />
           </div>
         )}
 
         {/* Eixo */}
         {userType !== "organizador" ? (
-          <div className="space-y-2">
-            <Label>Eixo de Comercial</Label>
-            <Select
-              value={editedContent.eixo}
-              onValueChange={(value) =>
-                setEditedContent({ ...editedContent, eixo: value })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione o eixo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="vendas">Vendas</SelectItem>
-                <SelectItem value="conexoes">Conexões</SelectItem>
-                <SelectItem value="experiencia">Experiência do Consumidor</SelectItem>
-                <SelectItem value="pluginfo">PlugInfo</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          editedContent.type === "membro" ? (
+            <div className="space-y-2">
+              <Label>Eixo de Comercial</Label>
+              <Select
+                value={editedContent.eixo}
+                onValueChange={(value) =>
+                  setEditedContent({ ...editedContent, eixo: value })
+                }
+              >
+                <SelectTrigger className="bg-secondary text-foreground border-border">
+                  <SelectValue placeholder="Selecione o eixo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="vendas">Vendas</SelectItem>
+                  <SelectItem value="conexoes">Conexões</SelectItem>
+                  <SelectItem value="experiencia">Experiência do Consumidor</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>Eixo de Comercial</Label>
+              <Input value="Trainee" disabled className="bg-secondary border-border" />
+            </div>
+          )
         ) : (
           <div className="space-y-2">
             <Label>Eixo de Comercial</Label>
-            <Input value="PlugInfo" disabled className="bg-secondary" />
+            <Input value="Trainee" disabled className="bg-secondary border-border" />
           </div>
         )}
 
@@ -182,24 +232,34 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
           />
         </div>
 
-        {/* Documentos */}
+        {/* Documentos — upload real */}
         <div className="space-y-3">
           <Label className="flex items-center gap-2">
-            <LinkIcon className="h-4 w-4" />
+            <Paperclip className="h-4 w-4" />
             Anexo de Documentos
           </Label>
+
+          {/* Lista dos documentos já anexados */}
           <div className="space-y-2">
             {editedContent.documents?.map((doc, index) => (
               <div
                 key={index}
                 className="flex items-center gap-2 p-2 bg-muted rounded-lg"
               >
-                <FileText className="h-4 w-4 text-primary" />
-                <span className="flex-1 text-sm truncate">{doc.name}</span>
+                <FileText className="h-4 w-4 text-primary shrink-0" />
+                <a
+                  href={doc.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 text-sm truncate text-primary hover:underline"
+                  title={doc.name}
+                >
+                  {doc.name}
+                </a>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6"
+                  className="h-6 w-6 shrink-0"
                   onClick={() => removeDocument(index)}
                 >
                   <Trash2 className="h-3 w-3" />
@@ -207,26 +267,40 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
               </div>
             ))}
           </div>
-          <div className="flex gap-2">
-            <Input
-              placeholder="Nome do documento"
-              value={newDocument.name}
-              onChange={(e) =>
-                setNewDocument({ ...newDocument, name: e.target.value })
-              }
-              className="flex-1 text-xs"
+
+          {/* Botão de upload */}
+          <div className="flex flex-col gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp,.zip,.txt,.csv"
+              className="hidden"
+              onChange={handleFileChange}
+              id="doc-upload-input"
             />
-            <Input
-              placeholder="URL do documento"
-              value={newDocument.url}
-              onChange={(e) =>
-                setNewDocument({ ...newDocument, url: e.target.value })
-              }
-              className="flex-1 text-xs"
-            />
-            <Button variant="outline" size="icon" onClick={addDocument}>
-              <Plus className="h-4 w-4" />
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full gap-2 border-dashed"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" />
+                  Selecionar arquivo(s) — PDF, Word, Excel, PPT, imagens...
+                </>
+              )}
             </Button>
+            {uploadError && (
+              <p className="text-xs text-destructive">{uploadError}</p>
+            )}
           </div>
         </div>
 
@@ -260,6 +334,7 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
               placeholder="URL do vídeo (YouTube, Vimeo, etc.)"
               value={newVideo}
               onChange={(e) => setNewVideo(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addVideo()}
               className="flex-1 text-xs"
             />
             <Button variant="outline" size="icon" onClick={addVideo}>
@@ -273,7 +348,7 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
           <Button variant="outline" onClick={onClose}>
             Cancelar
           </Button>
-          <Button onClick={handleSave}>Salvar Alterações</Button>
+          <Button onClick={handleSave} disabled={uploading}>Salvar Alterações</Button>
         </div>
       </CardContent>
     </Card>

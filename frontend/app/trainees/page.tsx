@@ -9,9 +9,11 @@ import { TrainingPath } from "@/components/dashboard/training-path"
 import { SpinGame } from "@/components/games/spin-game"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Compass,
   LogOut,
@@ -22,6 +24,14 @@ import {
   Video,
   ExternalLink,
   Award,
+  ClipboardList,
+  Upload,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Link2,
+  BookOpen,
+  Search,
 } from "lucide-react"
 
 interface LeaderboardEntry {
@@ -34,6 +44,27 @@ interface LeaderboardEntry {
   pontos_acumulados: number
 }
 
+interface Activity {
+  id: string
+  title: string
+  description?: string
+  eixo: string
+  material_id?: string | null
+  accepts_file: boolean
+  deadline?: string | null
+  is_open: boolean
+  effective_open: boolean
+  submission_count: number
+  my_submission?: {
+    id: string
+    file_url?: string | null
+    comment?: string
+    submitted_at?: string | null
+    grade?: number | null
+    feedback?: string
+  } | null
+}
+
 export default function TraineesPage() {
   const router = useRouter()
   const { user, logout, isLoading } = useAuth()
@@ -42,12 +73,18 @@ export default function TraineesPage() {
   const [contents, setContents] = useState<ContentItem[]>([])
   const [nodes, setNodes] = useState<any[]>([])
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
+  const [activities, setActivities] = useState<Activity[]>([])
+
+  // Activity submit state: activityId → { fileUrl, comment }
+  const [submitState, setSubmitState] = useState<Record<string, { fileUrl: string; comment: string }>>({})
+  const [submitting, setSubmitting] = useState<string | null>(null)
 
   // UI states
   const [activeTab, setActiveTab] = useState("trilha")
   const [selectedNode, setSelectedNode] = useState<any | null>(null)
   const [isPlayingGame, setIsPlayingGame] = useState(false)
   const [isReadingMaterial, setIsReadingMaterial] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
 
   const fetchData = async () => {
     const token = localStorage.getItem("token")
@@ -89,9 +126,39 @@ export default function TraineesPage() {
         const leaderboardData = await leaderboardRes.json()
         setLeaderboard(leaderboardData)
       }
+
+      // 4. Fetch Activities
+      const activitiesRes = await fetch("/api/activities", {
+        headers: { "Authorization": `Bearer ${token}` }
+      })
+      if (activitiesRes.ok) {
+        const activitiesData = await activitiesRes.json()
+        setActivities(activitiesData)
+      }
     } catch (e) {
       console.error("Erro ao carregar dados do trainee:", e)
     }
+  }
+
+  const handleSubmitActivity = async (activityId: string) => {
+    const token = localStorage.getItem("token")
+    if (!token) return
+    const state = submitState[activityId] || { fileUrl: "", comment: "" }
+    setSubmitting(activityId)
+    try {
+      const res = await fetch(`/api/activities/${activityId}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ file_url: state.fileUrl || null, comment: state.comment || "" })
+      })
+      if (res.ok) {
+        fetchData()
+      } else {
+        const err = await res.json()
+        alert(err.detail || "Erro ao enviar atividade")
+      }
+    } catch (e) { console.error(e) }
+    finally { setSubmitting(null) }
   }
 
   useEffect(() => {
@@ -178,9 +245,13 @@ export default function TraineesPage() {
     )
   }
 
-  // Find material details matching reference_id
-  const activeMaterial = selectedNode && selectedNode.type === "material"
-    ? contents.find(c => c.id === selectedNode.reference_id)
+  // Find activity and material for selectedNode
+  const relatedActivity = selectedNode
+    ? (activities.find(a => a.id === selectedNode.activity_id) || activities.find(a => a.id === selectedNode.reference_id))
+    : null
+
+  const activeMaterial = selectedNode
+    ? (contents.find(c => c.id === selectedNode.reference_id) || (relatedActivity ? contents.find(c => c.id === relatedActivity.material_id) : null))
     : null
 
   return (
@@ -195,7 +266,7 @@ export default function TraineesPage() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-foreground">Portal do Trainee</h1>
-                <p className="text-sm text-muted-foreground">Capacitação &amp; Resultados</p>
+                <p className="text-sm text-muted-foreground">Capacitação</p>
               </div>
             </div>
 
@@ -240,21 +311,15 @@ export default function TraineesPage() {
                   Olá, {user?.name}!
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Acompanhe sua capacitação comercial na trilha estilo Duolingo e compita no ranking cumulativo.
+                  Avance pelos módulos da trilha comercial e complete as atividades propostas.
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-4 self-stretch sm:self-auto bg-card p-3 rounded-xl border border-border justify-around sm:justify-start">
-              <div className="text-center px-4 border-r border-border">
-                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Pontos Totais</span>
-                <p className="text-lg font-black text-primary mt-0.5">{user?.pontos_acumulados} pts</p>
-              </div>
               <div className="text-center px-4">
-                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Nota de Rotação</span>
-                <p className="text-lg font-black text-amber-500 mt-0.5">
-                  {user?.nota_rotacao !== null && user?.nota_rotacao !== undefined ? user?.nota_rotacao.toFixed(1) : "N/A"}
-                </p>
+                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Pontos Totais</span>
+                <p className="text-lg font-black text-primary mt-0.5">{user?.pontos_acumulados ?? 0} pts</p>
               </div>
             </div>
           </div>
@@ -266,9 +331,18 @@ export default function TraineesPage() {
               <Compass className="h-4 w-4" />
               Trilha de Capacitação
             </TabsTrigger>
-            <TabsTrigger value="ranking" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Trophy className="h-4 w-4" />
-              Leaderboard Cumulativo
+            <TabsTrigger value="atividades" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <ClipboardList className="h-4 w-4" />
+              Atividades
+              {activities.filter(a => a.effective_open && !a.my_submission).length > 0 && (
+                <Badge className="ml-1 bg-amber-500 text-white text-[9px] px-1.5 py-0 h-4">
+                  {activities.filter(a => a.effective_open && !a.my_submission).length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="biblioteca" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <BookOpen className="h-4 w-4" />
+              Biblioteca
             </TabsTrigger>
           </TabsList>
 
@@ -290,72 +364,170 @@ export default function TraineesPage() {
             </div>
           </TabsContent>
 
-          {/* TAB: Leaderboard */}
-          <TabsContent value="ranking" className="space-y-6">
+          {/* TAB: Atividades */}
+          <TabsContent value="atividades" className="space-y-6">
             <div className="space-y-1">
-              <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-                <Trophy className="text-yellow-500 w-5 h-5" /> Ranking Geral de Vendas
-              </h2>
+              <h2 className="text-xl font-bold text-foreground">Atividades</h2>
               <p className="text-xs text-muted-foreground">
-                Classificação cumulativa de todos os trainees e membros. Veja sua posição e corra atrás do topo!
+                Complete as atividades propostas. Algumas exigem o envio de um arquivo (link do Google Drive, Dropbox, etc.).
               </p>
             </div>
 
-            <Card className="border-border bg-card">
-              <CardContent className="p-0">
-                <div className="divide-y divide-border">
-                  {leaderboard.map((entry, index) => {
-                    const isCurrentUser = entry.id === user?.id
-                    const isTopThree = index < 3
-                    const medals = ["🥇", "🥈", "🥉"]
+            {activities.length === 0 ? (
+              <div className="text-center py-16 text-muted-foreground border border-dashed border-border rounded-2xl">
+                <ClipboardList className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                <p className="text-sm">Nenhuma atividade disponível no momento.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {activities.map((activity) => {
+                  const isOpen = activity.effective_open
+                  const submitted = !!activity.my_submission
+                  const state = submitState[activity.id] || { fileUrl: activity.my_submission?.file_url || "", comment: activity.my_submission?.comment || "" }
+                  const isSubmitting = submitting === activity.id
 
-                    return (
-                      <div
-                        key={entry.id}
-                        className={`flex items-center justify-between p-4 transition-all ${
-                          isCurrentUser ? "bg-primary/5 border-l-4 border-l-primary" : ""
-                        }`}
-                      >
-                        <div className="flex items-center gap-4">
-                          <span className={`w-8 text-center font-bold text-sm ${isTopThree ? "text-lg" : "text-muted-foreground"}`}>
-                            {isTopThree ? medals[index] : index + 1}
-                          </span>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className={`font-bold text-sm ${isCurrentUser ? "text-primary" : "text-foreground"}`}>
-                                {entry.name}
-                              </span>
-                              {entry.type === "trainee" && (
-                                <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
-                                  Trainee
-                                </Badge>
-                              )}
-                              {entry.eixo && (
-                                <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-primary/20 text-primary">
-                                  {entry.eixo}
-                                </Badge>
-                              )}
-                            </div>
-                            <span className="text-xs text-muted-foreground">{entry.cargo}</span>
+                  return (
+                    <Card key={activity.id} className={`border-border bg-card ${
+                      submitted ? "border-emerald-500/30" : isOpen ? "" : "opacity-60"
+                    }`}>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <CardTitle className="text-base font-bold text-foreground">{activity.title}</CardTitle>
+                            {activity.description && (
+                              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{activity.description}</p>
+                            )}
+                          </div>
+                          <div className="flex flex-col gap-1.5 items-end shrink-0">
+                            {isOpen ? (
+                              <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
+                                <CheckCircle2 className="h-3 w-3 mr-1" />Aberta
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-rose-400 border-rose-500/30 text-[10px]">
+                                <XCircle className="h-3 w-3 mr-1" />Encerrada
+                              </Badge>
+                            )}
+                            {activity.accepts_file && (
+                              <Badge variant="outline" className="text-primary border-primary/30 text-[10px]">
+                                <Upload className="h-3 w-3 mr-1" />Envio obrigatório
+                              </Badge>
+                            )}
                           </div>
                         </div>
+                        {activity.deadline && (
+                          <p className="text-[10px] text-amber-400 flex items-center gap-1 mt-1">
+                            <Clock className="h-3 w-3" />
+                            Prazo: {new Date(activity.deadline).toLocaleString("pt-BR")}
+                          </p>
+                        )}
+                      </CardHeader>
 
-                        <div className="flex items-center gap-2 font-black text-foreground">
-                          <Award className="w-4 h-4 text-primary" />
-                          <span>{entry.pontos_acumulados} pts</span>
-                        </div>
-                      </div>
-                    )
-                  })}
+                      <CardContent className="space-y-3">
+                        {submitted && activity.my_submission && (
+                          <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/20 p-3 space-y-1">
+                            <p className="text-xs font-semibold text-emerald-400">✓ Enviado</p>
+                            {activity.my_submission.file_url && (
+                              <a href={activity.my_submission.file_url} target="_blank" rel="noopener noreferrer"
+                                className="text-xs text-primary flex items-center gap-1 hover:underline truncate">
+                                <Link2 className="h-3 w-3" />{activity.my_submission.file_url}
+                              </a>
+                            )}
+                            {activity.my_submission.comment && (
+                              <p className="text-xs text-muted-foreground italic">{activity.my_submission.comment}</p>
+                            )}
+                            {activity.my_submission.grade !== null && activity.my_submission.grade !== undefined && (
+                              <div className="pt-2 border-t border-emerald-500/20">
+                                <p className="text-xs font-bold text-emerald-400">Nota: {activity.my_submission.grade.toFixed(1)}</p>
+                                {activity.my_submission.feedback && (
+                                  <p className="text-xs text-muted-foreground">{activity.my_submission.feedback}</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
 
-                  {leaderboard.length === 0 && (
-                    <div className="text-center py-12 text-muted-foreground text-sm">
-                      Nenhum dado de ranking cadastrado.
+                        {isOpen && (
+                          <div className="space-y-2">
+                            {activity.accepts_file && (
+                              <div className="space-y-1">
+                                <label className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <Link2 className="h-3 w-3" />Link do arquivo (Google Drive, Dropbox, etc.)
+                                </label>
+                                <Input
+                                  placeholder="https://drive.google.com/..."
+                                  value={state.fileUrl}
+                                  onChange={(e) => setSubmitState(prev => ({ ...prev, [activity.id]: { ...state, fileUrl: e.target.value } }))}
+                                  className="bg-secondary border-border text-xs h-8"
+                                />
+                              </div>
+                            )}
+                            <div className="space-y-1">
+                              <label className="text-xs text-muted-foreground">Comentário (opcional)</label>
+                              <Textarea
+                                placeholder="Adicione um comentário..."
+                                value={state.comment}
+                                onChange={(e) => setSubmitState(prev => ({ ...prev, [activity.id]: { ...state, comment: e.target.value } }))}
+                                className="bg-secondary border-border text-xs min-h-[60px] resize-none"
+                              />
+                            </div>
+                            <Button
+                              size="sm"
+                              className="w-full gap-2"
+                              disabled={isSubmitting || (activity.accepts_file && !state.fileUrl)}
+                              onClick={() => handleSubmitActivity(activity.id)}
+                            >
+                              <Upload className="h-3.5 w-3.5" />
+                              {isSubmitting ? "Enviando..." : submitted ? "Atualizar envio" : "Enviar atividade"}
+                            </Button>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+            )}
+          </TabsContent>
+
+
+
+          {/* TAB: Biblioteca */}
+          <TabsContent value="biblioteca" className="space-y-6">
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+              <div className="space-y-1">
+                <h2 className="text-xl font-bold text-foreground">Biblioteca de Trainees</h2>
+                <p className="text-xs text-muted-foreground">Consulte os materiais didáticos da sua capacitação.</p>
+              </div>
+              <div className="relative w-full sm:max-w-xs">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Pesquisar..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              {(() => {
+                const traineeContents = contents.filter(c => c.eixo === "trainee")
+                const filtered = traineeContents.filter((content) =>
+                  content.name.toLowerCase().includes(searchQuery.toLowerCase())
+                )
+                if (filtered.length === 0) {
+                  return (
+                    <div className="text-center py-12 border border-dashed border-border rounded-xl text-muted-foreground text-sm">
+                      Nenhum material encontrado.
                     </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+                  )
+                }
+                return filtered.map((content) => (
+                  <ViewContentCard key={content.id} content={content} />
+                ))
+              })()}
+            </div>
           </TabsContent>
         </Tabs>
       </div>
@@ -363,18 +535,18 @@ export default function TraineesPage() {
       {/* MODAL: Leitor de Material */}
       <Dialog open={isReadingMaterial} onOpenChange={setIsReadingMaterial}>
         <DialogContent className="max-w-2xl bg-card border-border text-foreground">
+          <DialogHeader>
+            <DialogTitle className={activeMaterial ? "text-xl font-extrabold mt-2 leading-tight" : "sr-only"}>
+              {activeMaterial?.name || selectedNode?.name || "Material de Capacitação"}
+            </DialogTitle>
+          </DialogHeader>
           {activeMaterial ? (
             <>
-              <DialogHeader>
-                <div className="flex items-center justify-between">
-                  <Badge className="bg-primary/20 text-primary border-primary/30 uppercase tracking-widest text-[9px] font-extrabold">
-                    Capacitação Geral
-                  </Badge>
-                </div>
-                <DialogTitle className="text-xl font-extrabold mt-2 leading-tight">
-                  {activeMaterial.name}
-                </DialogTitle>
-              </DialogHeader>
+              <div className="flex items-center justify-between">
+                <Badge className="bg-primary/20 text-primary border-primary/30 uppercase tracking-widest text-[9px] font-extrabold">
+                  Capacitação Geral
+                </Badge>
+              </div>
 
               <div className="space-y-6 mt-4">
                 {/* Texto */}
@@ -426,14 +598,111 @@ export default function TraineesPage() {
                   </div>
                 )}
 
+                {/* Related Activity Section */}
+                {relatedActivity && (
+                  <div className="mt-6 border-t border-border pt-4 space-y-4">
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <ClipboardList className="w-4 h-4 text-primary" /> Atividade Requerida: {relatedActivity.title}
+                    </h4>
+                    {relatedActivity.description && (
+                      <p className="text-xs text-muted-foreground bg-secondary/50 p-3 rounded-lg border border-border">
+                        {relatedActivity.description}
+                      </p>
+                    )}
+                    {(selectedNode?.deadline || relatedActivity.deadline) && (
+                      <p className="text-[10px] text-amber-400 flex items-center gap-1 font-semibold">
+                        <Clock className="w-3.5 h-3.5" /> Prazo de entrega: {new Date(selectedNode?.deadline || relatedActivity.deadline).toLocaleString("pt-BR")}
+                      </p>
+                    )}
+
+                    {/* Submission status or form */}
+                    {relatedActivity.my_submission ? (
+                      <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/20 p-3 space-y-2">
+                        <p className="text-xs font-semibold text-emerald-400">✓ Atividade Enviada</p>
+                        {relatedActivity.my_submission.file_url && (
+                          <a href={relatedActivity.my_submission.file_url} target="_blank" rel="noopener noreferrer"
+                            className="text-xs text-primary flex items-center gap-1 hover:underline truncate">
+                            <Link2 className="h-3 w-3" />{relatedActivity.my_submission.file_url}
+                          </a>
+                        )}
+                        {relatedActivity.my_submission.comment && (
+                          <p className="text-xs text-muted-foreground italic">"{relatedActivity.my_submission.comment}"</p>
+                        )}
+                        {relatedActivity.my_submission.grade !== null && relatedActivity.my_submission.grade !== undefined && (
+                          <div className="pt-2 border-t border-emerald-500/20">
+                            <p className="text-xs font-bold text-emerald-400">Nota: {relatedActivity.my_submission.grade.toFixed(1)}</p>
+                            {relatedActivity.my_submission.feedback && (
+                              <p className="text-xs text-muted-foreground">{relatedActivity.my_submission.feedback}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+
+                    {/* If open and not submitted, show the inputs */}
+                    {relatedActivity.effective_open && !relatedActivity.my_submission && (
+                      <div className="space-y-3 p-3 bg-secondary/30 border border-border rounded-xl">
+                        {relatedActivity.accepts_file && (
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Link2 className="h-3 w-3" /> Link do arquivo (Google Drive, Dropbox, etc.)
+                            </label>
+                            <Input
+                              placeholder="https://drive.google.com/..."
+                              value={submitState[relatedActivity.id]?.fileUrl || ""}
+                              onChange={(e) => setSubmitState(prev => ({ 
+                                ...prev, 
+                                [relatedActivity.id]: { 
+                                  fileUrl: e.target.value, 
+                                  comment: submitState[relatedActivity.id]?.comment || "" 
+                                } 
+                              }))}
+                              className="bg-background border-border text-xs h-9"
+                            />
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          <label className="text-xs text-muted-foreground">Comentário (opcional)</label>
+                          <Textarea
+                            placeholder="Adicione observações..."
+                            value={submitState[relatedActivity.id]?.comment || ""}
+                            onChange={(e) => setSubmitState(prev => ({ 
+                              ...prev, 
+                              [relatedActivity.id]: { 
+                                fileUrl: submitState[relatedActivity.id]?.fileUrl || "", 
+                                comment: e.target.value 
+                              } 
+                            }))}
+                            className="bg-background border-border text-xs min-h-[60px] resize-none"
+                          />
+                        </div>
+                        <Button
+                          size="sm"
+                          className="w-full gap-2 bg-primary hover:bg-primary/95 text-white"
+                          disabled={submitting === relatedActivity.id || (relatedActivity.accepts_file && !(submitState[relatedActivity.id]?.fileUrl))}
+                          onClick={async () => {
+                            await handleSubmitActivity(relatedActivity.id)
+                            await handleCompleteMaterial()
+                          }}
+                        >
+                          <Upload className="h-3.5 w-3.5" />
+                          {submitting === relatedActivity.id ? "Enviando..." : "Enviar Atividade & Concluir Material"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Ações */}
                 <div className="flex justify-end pt-4 border-t border-border gap-3">
                   <Button variant="outline" onClick={() => setIsReadingMaterial(false)}>
                     Fechar Leitor
                   </Button>
-                  <Button onClick={handleCompleteMaterial} disabled={selectedNode?.completed}>
-                    {selectedNode?.completed ? "Já Concluído" : "Marcar como Concluído (+50 pts)"}
-                  </Button>
+                  {(!relatedActivity || relatedActivity.my_submission) && (
+                    <Button onClick={handleCompleteMaterial} disabled={selectedNode?.completed}>
+                      {selectedNode?.completed ? "Já Concluído" : "Marcar como Concluído (+50 pts)"}
+                    </Button>
+                  )}
                 </div>
               </div>
             </>
@@ -448,6 +717,9 @@ export default function TraineesPage() {
       {/* MODAL: Jogar Game */}
       <Dialog open={isPlayingGame} onOpenChange={setIsPlayingGame}>
         <DialogContent className="max-w-2xl bg-card border-border p-0 overflow-hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{selectedNode?.name || "Jogo Quiz SPIN"}</DialogTitle>
+          </DialogHeader>
           {selectedNode && isPlayingGame && (
             <div className="p-6">
               <SpinGame

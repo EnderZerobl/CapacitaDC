@@ -56,7 +56,7 @@ echo "🌱 Inicializando e populando o banco de dados..."
 
 # 5. Iniciar o servidor Backend (uvicorn)
 echo "⚡ Iniciando servidor Backend FastAPI na porta 8000..."
-.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload &
 BACKEND_PID=$!
 cd ..
 

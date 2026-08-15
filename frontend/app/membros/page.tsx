@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
+import { Textarea } from "@/components/ui/textarea"
 import {
   LayoutGrid,
   Search,
@@ -24,7 +25,11 @@ import {
   FileText,
   Video,
   ExternalLink,
-  Award
+  Award,
+  ClipboardList,
+  Upload,
+  Clock,
+  Link2
 } from "lucide-react"
 
 interface LeaderboardEntry {
@@ -45,6 +50,9 @@ export default function MembrosPage() {
   const [contents, setContents] = useState<ContentItem[]>([])
   const [nodes, setNodes] = useState<any[]>([])
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
+  const [activities, setActivities] = useState<any[]>([])
+  const [submitState, setSubmitState] = useState<Record<string, { fileUrl: string; comment: string }>>({})
+  const [submitting, setSubmitting] = useState<string | null>(null)
   
   // UI states
   const [activeTab, setActiveTab] = useState("trilhas")
@@ -52,6 +60,7 @@ export default function MembrosPage() {
   const [selectedNode, setSelectedNode] = useState<any | null>(null)
   const [isPlayingGame, setIsPlayingGame] = useState(false)
   const [isReadingMaterial, setIsReadingMaterial] = useState(false)
+  const [selectedEixo, setSelectedEixo] = useState<string>("todos")
 
   const fetchData = async () => {
     const token = localStorage.getItem("token")
@@ -93,9 +102,38 @@ export default function MembrosPage() {
         const leaderboardData = await leaderboardRes.json()
         setLeaderboard(leaderboardData)
       }
+
+      // 4. Fetch Activities
+      const activitiesRes = await fetch("/api/activities", {
+        headers: { "Authorization": `Bearer ${token}` }
+      })
+      if (activitiesRes.ok) {
+        setActivities(await activitiesRes.json())
+      }
     } catch (e) {
       console.error("Erro ao carregar dados do portal:", e)
     }
+  }
+
+  const handleSubmitActivity = async (activityId: string) => {
+    const token = localStorage.getItem("token")
+    if (!token) return
+    const state = submitState[activityId] || { fileUrl: "", comment: "" }
+    setSubmitting(activityId)
+    try {
+      const res = await fetch(`/api/activities/${activityId}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ file_url: state.fileUrl || null, comment: state.comment || "" })
+      })
+      if (res.ok) {
+        fetchData()
+      } else {
+        const err = await res.json()
+        alert(err.detail || "Erro ao enviar atividade")
+      }
+    } catch (e) { console.error(e) }
+    finally { setSubmitting(null) }
   }
 
   useEffect(() => {
@@ -190,9 +228,13 @@ export default function MembrosPage() {
   const connectionsNodes = nodes.filter(n => n.eixo === "conexoes")
   const cxNodes = nodes.filter(n => n.eixo === "experiencia")
 
-  // Find material details matching reference_id
-  const activeMaterial = selectedNode && selectedNode.type === "material"
-    ? contents.find(c => c.id === selectedNode.reference_id)
+  // Find activity and material for selectedNode
+  const relatedActivity = selectedNode
+    ? (activities.find(a => a.id === selectedNode.activity_id) || activities.find(a => a.id === selectedNode.reference_id))
+    : null
+
+  const activeMaterial = selectedNode
+    ? (contents.find(c => c.id === selectedNode.reference_id) || (relatedActivity ? contents.find(c => c.id === relatedActivity.material_id) : null))
     : null
 
   // Filter contents list search
@@ -262,10 +304,6 @@ export default function MembrosPage() {
               <Compass className="h-4 w-4" />
               Trilhas de Desenvolvimento
             </TabsTrigger>
-            <TabsTrigger value="ranking" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Trophy className="h-4 w-4" />
-              Leaderboard Cumulativo
-            </TabsTrigger>
             <TabsTrigger value="biblioteca" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <BookOpen className="h-4 w-4" />
               Biblioteca
@@ -308,80 +346,14 @@ export default function MembrosPage() {
             </div>
           </TabsContent>
 
-          {/* TAB: Leaderboard */}
-          <TabsContent value="ranking" className="space-y-6">
-            <div className="space-y-2">
-              <h2 className="text-2xl font-extrabold text-foreground tracking-tight flex items-center gap-2">
-                <Trophy className="text-yellow-500 w-7 h-7" /> Ranking Geral de Comercial
-              </h2>
-              <p className="text-muted-foreground">
-                Classificação cumulativa dos membros e trainees baseada no progresso das trilhas e nos jogos.
-              </p>
-            </div>
 
-            <Card className="border-border bg-card">
-              <CardContent className="p-0">
-                <div className="divide-y divide-border">
-                  {leaderboard.map((entry, index) => {
-                    const isCurrentUser = entry.id === user?.id
-                    const isTopThree = index < 3
-                    const medals = ["🥇", "🥈", "🥉"]
-
-                    return (
-                      <div
-                        key={entry.id}
-                        className={`flex items-center justify-between p-4 transition-all ${
-                          isCurrentUser ? "bg-primary/5 border-l-4 border-l-primary" : ""
-                        }`}
-                      >
-                        <div className="flex items-center gap-4">
-                          <span className={`w-8 text-center font-bold text-sm ${isTopThree ? "text-lg" : "text-muted-foreground"}`}>
-                            {isTopThree ? medals[index] : index + 1}
-                          </span>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className={`font-bold text-sm ${isCurrentUser ? "text-primary" : "text-foreground"}`}>
-                                {entry.name}
-                              </span>
-                              {entry.type === "trainee" && (
-                                <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
-                                  Trainee
-                                </Badge>
-                              )}
-                              {entry.eixo && (
-                                <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-primary/20 text-primary">
-                                  {entry.eixo}
-                                </Badge>
-                              )}
-                            </div>
-                            <span className="text-xs text-muted-foreground">{entry.cargo}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 font-black text-foreground">
-                          <Award className="w-4 h-4 text-primary" />
-                          <span>{entry.pontos_acumulados} pts</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-
-                  {leaderboard.length === 0 && (
-                    <div className="text-center py-12 text-muted-foreground text-sm">
-                      Nenhum dado de ranking cadastrado.
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
 
           {/* TAB: Biblioteca */}
           <TabsContent value="biblioteca" className="space-y-6">
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-1">
-                <h2 className="text-xl font-bold text-foreground">Pesquisa Rápida</h2>
-                <p className="text-xs text-muted-foreground">Busque por materiais arquivados</p>
+                <h2 className="text-xl font-bold text-foreground">Biblioteca de Materiais</h2>
+                <p className="text-xs text-muted-foreground">Filtre materiais por eixo de conhecimento ou pesquise pelo nome.</p>
               </div>
               <div className="relative w-full sm:max-w-xs">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -394,16 +366,52 @@ export default function MembrosPage() {
               </div>
             </div>
 
-            <div className="grid gap-4">
-              {filteredContents.map((content) => (
-                <ViewContentCard key={content.id} content={content} />
+            {/* Eixo Filter Buttons */}
+            <div className="flex flex-wrap gap-2 pb-2 border-b border-border">
+              {[
+                { id: "todos", name: "Todos" },
+                { id: "trainee", name: "Trainee (Geral)" },
+                { id: "vendas", name: "Vendas" },
+                { id: "conexoes", name: "Conexões" },
+                { id: "experiencia", name: "Experiência" }
+              ].map((e) => (
+                <Button
+                  key={e.id}
+                  variant={selectedEixo === e.id ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedEixo(e.id)}
+                  className={`text-xs h-8 rounded-lg ${
+                    selectedEixo === e.id
+                      ? "bg-primary text-primary-foreground hover:bg-primary/95"
+                      : "hover:bg-secondary/80 border-border"
+                  }`}
+                >
+                  {e.name}
+                </Button>
               ))}
+            </div>
 
-              {filteredContents.length === 0 && (
-                <div className="text-center py-12 border border-dashed border-border rounded-xl text-muted-foreground text-sm">
-                  Nenhum material encontrado.
-                </div>
-              )}
+            <div className="grid gap-4">
+              {(() => {
+                const filteredByEixo = selectedEixo === "todos"
+                  ? contents
+                  : contents.filter(c => c.eixo === selectedEixo)
+                const finalFiltered = filteredByEixo.filter(c =>
+                  c.name.toLowerCase().includes(searchQuery.toLowerCase())
+                )
+
+                if (finalFiltered.length === 0) {
+                  return (
+                    <div className="text-center py-12 border border-dashed border-border rounded-xl text-muted-foreground text-sm">
+                      Nenhum material encontrado neste filtro.
+                    </div>
+                  )
+                }
+
+                return finalFiltered.map((content) => (
+                  <ViewContentCard key={content.id} content={content} />
+                ))
+              })()}
             </div>
           </TabsContent>
         </Tabs>
@@ -412,18 +420,18 @@ export default function MembrosPage() {
       {/* MODAL: Leitor de Material */}
       <Dialog open={isReadingMaterial} onOpenChange={setIsReadingMaterial}>
         <DialogContent className="max-w-2xl bg-card border-border text-foreground">
+          <DialogHeader>
+            <DialogTitle className={activeMaterial ? "text-xl font-extrabold mt-2 leading-tight" : "sr-only"}>
+              {activeMaterial?.name || selectedNode?.name || "Material de Capacitação"}
+            </DialogTitle>
+          </DialogHeader>
           {activeMaterial ? (
             <>
-              <DialogHeader>
-                <div className="flex items-center justify-between">
-                  <Badge className="bg-primary/20 text-primary border-primary/30 uppercase tracking-widest text-[9px] font-extrabold">
-                    {activeMaterial.eixo}
-                  </Badge>
-                </div>
-                <DialogTitle className="text-xl font-extrabold mt-2 leading-tight">
-                  {activeMaterial.name}
-                </DialogTitle>
-              </DialogHeader>
+              <div className="flex items-center justify-between">
+                <Badge className="bg-primary/20 text-primary border-primary/30 uppercase tracking-widest text-[9px] font-extrabold">
+                  {activeMaterial.eixo}
+                </Badge>
+              </div>
 
               <div className="space-y-6 mt-4">
                 {/* Texto */}
@@ -477,14 +485,111 @@ export default function MembrosPage() {
                   </div>
                 )}
 
+                {/* Related Activity Section */}
+                {relatedActivity && (
+                  <div className="mt-6 border-t border-border pt-4 space-y-4">
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                      <ClipboardList className="w-4 h-4 text-primary" /> Atividade Requerida: {relatedActivity.title}
+                    </h4>
+                    {relatedActivity.description && (
+                      <p className="text-xs text-muted-foreground bg-secondary/50 p-3 rounded-lg border border-border">
+                        {relatedActivity.description}
+                      </p>
+                    )}
+                    {(selectedNode?.deadline || relatedActivity.deadline) && (
+                      <p className="text-[10px] text-amber-400 flex items-center gap-1 font-semibold">
+                        <Clock className="w-3.5 h-3.5" /> Prazo de entrega: {new Date(selectedNode?.deadline || relatedActivity.deadline).toLocaleString("pt-BR")}
+                      </p>
+                    )}
+
+                    {/* Submission status or form */}
+                    {relatedActivity.my_submission ? (
+                      <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/20 p-3 space-y-2">
+                        <p className="text-xs font-semibold text-emerald-400">✓ Atividade Enviada</p>
+                        {relatedActivity.my_submission.file_url && (
+                          <a href={relatedActivity.my_submission.file_url} target="_blank" rel="noopener noreferrer"
+                            className="text-xs text-primary flex items-center gap-1 hover:underline truncate">
+                            <Link2 className="h-3 w-3" />{relatedActivity.my_submission.file_url}
+                          </a>
+                        )}
+                        {relatedActivity.my_submission.comment && (
+                          <p className="text-xs text-muted-foreground italic">"{relatedActivity.my_submission.comment}"</p>
+                        )}
+                        {relatedActivity.my_submission.grade !== null && relatedActivity.my_submission.grade !== undefined && (
+                          <div className="pt-2 border-t border-emerald-500/20">
+                            <p className="text-xs font-bold text-emerald-400">Nota: {relatedActivity.my_submission.grade.toFixed(1)}</p>
+                            {relatedActivity.my_submission.feedback && (
+                              <p className="text-xs text-muted-foreground">{relatedActivity.my_submission.feedback}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+
+                    {/* If open and not submitted, show the inputs */}
+                    {relatedActivity.effective_open && !relatedActivity.my_submission && (
+                      <div className="space-y-3 p-3 bg-secondary/30 border border-border rounded-xl">
+                        {relatedActivity.accepts_file && (
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Link2 className="h-3 w-3" /> Link do arquivo (Google Drive, Dropbox, etc.)
+                            </label>
+                            <Input
+                              placeholder="https://drive.google.com/..."
+                              value={submitState[relatedActivity.id]?.fileUrl || ""}
+                              onChange={(e) => setSubmitState(prev => ({ 
+                                ...prev, 
+                                [relatedActivity.id]: { 
+                                  fileUrl: e.target.value, 
+                                  comment: submitState[relatedActivity.id]?.comment || "" 
+                                } 
+                              }))}
+                              className="bg-background border-border text-xs h-9"
+                            />
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          <label className="text-xs text-muted-foreground">Comentário (opcional)</label>
+                          <Textarea
+                            placeholder="Adicione observações..."
+                            value={submitState[relatedActivity.id]?.comment || ""}
+                            onChange={(e) => setSubmitState(prev => ({ 
+                              ...prev, 
+                              [relatedActivity.id]: { 
+                                fileUrl: submitState[relatedActivity.id]?.fileUrl || "", 
+                                comment: e.target.value 
+                              } 
+                            }))}
+                            className="bg-background border-border text-xs min-h-[60px] resize-none"
+                          />
+                        </div>
+                        <Button
+                          size="sm"
+                          className="w-full gap-2 bg-primary hover:bg-primary/95 text-white"
+                          disabled={submitting === relatedActivity.id || (relatedActivity.accepts_file && !(submitState[relatedActivity.id]?.fileUrl))}
+                          onClick={async () => {
+                            await handleSubmitActivity(relatedActivity.id)
+                            await handleCompleteMaterial()
+                          }}
+                        >
+                          <Upload className="h-3.5 w-3.5" />
+                          {submitting === relatedActivity.id ? "Enviando..." : "Enviar Atividade & Concluir Material"}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Ações */}
                 <div className="flex justify-end pt-4 border-t border-border gap-3">
                   <Button variant="outline" onClick={() => setIsReadingMaterial(false)}>
                     Fechar Leitor
                   </Button>
-                  <Button onClick={handleCompleteMaterial} disabled={selectedNode?.completed}>
-                    {selectedNode?.completed ? "Já Concluído" : "Marcar como Concluído (+50 pts)"}
-                  </Button>
+                  {(!relatedActivity || relatedActivity.my_submission) && (
+                    <Button onClick={handleCompleteMaterial} disabled={selectedNode?.completed}>
+                      {selectedNode?.completed ? "Já Concluído" : "Marcar como Concluído (+50 pts)"}
+                    </Button>
+                  )}
                 </div>
               </div>
             </>
@@ -499,6 +604,9 @@ export default function MembrosPage() {
       {/* MODAL: Jogar Game */}
       <Dialog open={isPlayingGame} onOpenChange={setIsPlayingGame}>
         <DialogContent className="max-w-2xl bg-card border-border p-0 overflow-hidden">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{selectedNode?.name || "Jogo Quiz SPIN"}</DialogTitle>
+          </DialogHeader>
           {selectedNode && isPlayingGame && (
             <div className="p-6">
               <SpinGame

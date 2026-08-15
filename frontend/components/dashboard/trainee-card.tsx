@@ -1,17 +1,24 @@
 "use client"
 
+import { useRouter } from "next/navigation"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Star } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Star, ExternalLink } from "lucide-react"
 
 interface TraineeCardProps {
+  id: string
   name: string
   photo?: string
   notaRotacao?: number
+  rotacao?: number | null
+  showGrade?: boolean  // only true for admin/organizador
+  showProfile?: boolean
 }
 
-export function TraineeCard({ name, photo, notaRotacao }: TraineeCardProps) {
+export function TraineeCard({ id, name, photo, notaRotacao, rotacao, showGrade = false, showProfile = false }: TraineeCardProps) {
+  const router = useRouter()
   const initials = name
     .split(" ")
     .map((n) => n[0])
@@ -23,38 +30,66 @@ export function TraineeCard({ name, photo, notaRotacao }: TraineeCardProps) {
     <Card className="border-border/50 bg-card hover:border-primary/50 transition-all duration-200">
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
-          <Avatar className="h-10 w-10 border-2 border-muted">
+          <Avatar className="h-10 w-10 border-2 border-muted shrink-0">
             <AvatarImage src={photo || "/placeholder.svg"} alt={name} />
             <AvatarFallback className="bg-muted text-muted-foreground font-medium">
               {initials}
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <h3 className="font-medium text-foreground truncate">{name}</h3>
-            <span className="text-xs text-muted-foreground">Trainee</span>
-
-            <div className="mt-3">
-              {notaRotacao !== undefined ? (
-                <div className="flex items-center gap-2">
-                  <Star className="h-3.5 w-3.5 text-amber-400" />
-                  <span className="text-xs text-muted-foreground">Nota da Rotação:</span>
-                  <Badge
-                    variant="outline"
-                    className={`text-xs ${
-                      notaRotacao >= 8
-                        ? "border-emerald-500/30 text-emerald-400"
-                        : notaRotacao >= 6
-                        ? "border-amber-500/30 text-amber-400"
-                        : "border-rose-500/30 text-rose-400"
-                    }`}
-                  >
-                    {notaRotacao.toFixed(1)}
-                  </Badge>
-                </div>
-              ) : (
-                <span className="text-xs text-muted-foreground/60 italic">Sem nota ainda</span>
+            <div className="flex items-center justify-between gap-1">
+              <h3 className="font-medium text-foreground truncate text-sm">{name}</h3>
+              {rotacao && (
+                <Badge
+                  variant="outline"
+                  className={`text-[9px] shrink-0 ${
+                    rotacao === 1
+                      ? "border-sky-500/30 text-sky-400"
+                      : "border-violet-500/30 text-violet-400"
+                  }`}
+                >
+                  R{rotacao}
+                </Badge>
               )}
             </div>
+            <span className="text-xs text-muted-foreground">Trainee</span>
+
+            {showGrade && (
+              <div className="mt-2">
+                {notaRotacao !== undefined ? (
+                  <div className="flex items-center gap-2">
+                    <Star className="h-3.5 w-3.5 text-amber-400" />
+                    <span className="text-xs text-muted-foreground">Nota:</span>
+                    <Badge
+                      variant="outline"
+                      className={`text-xs ${
+                        notaRotacao >= 8
+                          ? "border-emerald-500/30 text-emerald-400"
+                          : notaRotacao >= 6
+                          ? "border-amber-500/30 text-amber-400"
+                          : "border-rose-500/30 text-rose-400"
+                      }`}
+                    >
+                      {notaRotacao.toFixed(1)}
+                    </Badge>
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted-foreground/60 italic">Sem nota ainda</span>
+                )}
+              </div>
+            )}
+
+            {showProfile && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-2 h-6 text-[10px] px-2 text-primary hover:text-primary/80 -ml-1"
+                onClick={() => router.push(`/perfil/${id}`)}
+              >
+                <ExternalLink className="h-3 w-3 mr-1" />
+                Ver Perfil
+              </Button>
+            )}
           </div>
         </div>
       </CardContent>

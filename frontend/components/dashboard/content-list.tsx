@@ -46,8 +46,8 @@ export function ContentList({
     const newContent: ContentItem = {
       id: `content-new-${Date.now()}`,
       name: "Novo Conteúdo",
-      type: isOrg ? "pluginfo" : "membro",
-      eixo: isOrg ? "pluginfo" : "vendas",
+      type: isOrg ? "trainee" : "membro",
+      eixo: isOrg ? "trainee" : "vendas",
       text: "",
       documents: [],
       videos: [],
@@ -103,7 +103,6 @@ export function ContentList({
                     <SelectItem value="all">Todos</SelectItem>
                     <SelectItem value="membro">Membros</SelectItem>
                     <SelectItem value="trainee">Trainees</SelectItem>
-                    <SelectItem value="pluginfo">PlugInfo</SelectItem>
                   </SelectContent>
                 </Select>
               )}
