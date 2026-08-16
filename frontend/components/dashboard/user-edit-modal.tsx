@@ -39,6 +39,7 @@ interface UserEditModalProps {
     cargo: string
     type: string
     eixo?: string
+    rotacao?: number | null
   }
   currentUserRole?: string // "admin" or "organizador"
   onSave: (data: {
@@ -48,6 +49,7 @@ interface UserEditModalProps {
     type: string
     eixo?: string
     password?: string
+    rotacao?: number
   }) => void
   onDelete: () => void
 }
@@ -68,6 +70,7 @@ export function UserEditModal({
   const [cargo, setCargo] = useState<Cargo>(user.cargo as Cargo)
   const [type, setType] = useState<string>(user.type)
   const [eixo, setEixo] = useState<Eixo | "">((user.eixo as Eixo) || "")
+  const [rotacao, setRotacao] = useState<string>(user.rotacao ? user.rotacao.toString() : "")
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [showPassword, setShowPassword] = useState(false)
 
@@ -99,6 +102,7 @@ export function UserEditModal({
       return
     }
 
+    const rot = rotacao ? parseInt(rotacao) : undefined
     onSave({
       name: name.trim(),
       email: email.trim(),
@@ -106,6 +110,7 @@ export function UserEditModal({
       type: type,
       password: password || undefined,
       ...(type === "membro" && eixo ? { eixo: eixo as Eixo } : { eixo: undefined }),
+      ...(type === "trainee" && rot && !isNaN(rot) ? { rotacao: rot } : {}),
     })
     setIsOpen(false)
   }
@@ -240,6 +245,22 @@ export function UserEditModal({
             <div className="space-y-1">
               <Label className="text-foreground">Tipo / Cargo</Label>
               <Input value="Trainee" disabled className="bg-secondary border-border" />
+            </div>
+          )}
+
+          {/* Rotação — only for trainees */}
+          {type === "trainee" && (
+            <div className="space-y-1">
+              <Label className="text-foreground">Rotação</Label>
+              <Select value={rotacao} onValueChange={setRotacao}>
+                <SelectTrigger className="bg-secondary border-border text-foreground">
+                  <SelectValue placeholder="Selecione a rotação" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Rotação 1</SelectItem>
+                  <SelectItem value="2">Rotação 2</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           )}
         </div>

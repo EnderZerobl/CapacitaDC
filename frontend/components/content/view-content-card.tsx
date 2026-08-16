@@ -22,6 +22,24 @@ interface ViewContentCardProps {
 export function ViewContentCard({ content }: ViewContentCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 
+  // Extract a friendly label from a video URL
+  const getVideoLabel = (url: string, index: number): string => {
+    try {
+      const u = new URL(url)
+      // YouTube: ?v=ID or youtu.be/ID
+      const ytId = u.searchParams.get("v") || (u.hostname === "youtu.be" ? u.pathname.slice(1) : null)
+      if (ytId) return `YouTube — ${ytId}`
+      // Vimeo
+      if (u.hostname.includes("vimeo")) return `Vimeo — ${u.pathname.split("/").filter(Boolean).pop() || "vídeo"}`
+      // Generic: show hostname + path truncated
+      const path = (u.pathname || "").replace(/^\//,"").slice(0, 40)
+      return `${u.hostname}${path ? " / " + path : ""}`
+    } catch {
+      // Not a valid URL or plain text — show truncated
+      return url.length > 60 ? url.slice(0, 57) + "…" : url
+    }
+  }
+
   return (
     <Card className="bg-card border-border hover:border-primary/30 transition-all">
       <CardHeader className="pb-3">
@@ -74,7 +92,7 @@ export function ViewContentCard({ content }: ViewContentCardProps) {
           )}
 
           {/* Documents */}
-          {content.documents.length > 0 && (
+          {(content.documents?.length ?? 0) > 0 && (
             <>
               <Separator className="bg-border" />
               <div className="space-y-3">
@@ -106,7 +124,7 @@ export function ViewContentCard({ content }: ViewContentCardProps) {
           )}
 
           {/* Videos */}
-          {content.videos.length > 0 && (
+          {(content.videos?.length ?? 0) > 0 && (
             <>
               <Separator className="bg-border" />
               <div className="space-y-3">
@@ -121,15 +139,16 @@ export function ViewContentCard({ content }: ViewContentCardProps) {
                       href={video}
                       target="_blank"
                       rel="noopener noreferrer"
+                      title={video}
                       className="flex items-center gap-3 p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors group"
                     >
-                      <div className="h-8 w-8 rounded bg-red-500/20 flex items-center justify-center">
+                      <div className="h-8 w-8 rounded bg-red-500/20 flex items-center justify-center shrink-0">
                         <Video className="h-4 w-4 text-red-400" />
                       </div>
                       <span className="text-sm text-foreground flex-1 truncate">
-                        {video}
+                        {getVideoLabel(video, index)}
                       </span>
-                      <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                      <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
                     </a>
                   ))}
                 </div>

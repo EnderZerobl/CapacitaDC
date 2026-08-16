@@ -459,8 +459,9 @@ def create_training_node(
     act = None
     if activity_id:
         act = db.query(models.Activity).filter(models.Activity.id == activity_id).first()
-        if act and act.material_id:
-            reference_id = act.material_id
+        # Note: reference_id is NOT overwritten with act.material_id here.
+        # Activity nodes store the activity link via activity_id; the material
+        # is resolved on demand (e.g. on the member/trainee view).
 
     if not node_name:
         if act:
@@ -596,10 +597,6 @@ def get_training_nodes(
             unlocked = prereq_ok and release_ok
 
         ref_id = node.reference_id
-        if node.activity_id and (not ref_id or ref_id == node.activity_id):
-            act = db.query(models.Activity).filter(models.Activity.id == node.activity_id).first()
-            if act and act.material_id:
-                ref_id = act.material_id
 
         result.append(
             schemas.TrainingNodeGraphOut(

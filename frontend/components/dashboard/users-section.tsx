@@ -2,8 +2,8 @@
 
 import { MemberCard } from "./member-card"
 import { TraineeCard } from "./trainee-card"
-import { TraineeEditForm } from "./trainee-edit-form"
 import { UserEditModal } from "./user-edit-modal"
+
 
 interface Member {
   id: string
@@ -36,7 +36,7 @@ interface UsersSectionProps {
   ) => void
   onUpdateUser?: (
     userId: string,
-    data: { name: string; email: string; cargo: string; type: string; eixo?: string; password?: string }
+    data: { name: string; email: string; cargo: string; type: string; eixo?: string; password?: string; rotacao?: number }
   ) => void
   onDeleteUser?: (userId: string) => void
 }
@@ -79,15 +79,6 @@ function TraineeGroup({
               showProfile={showProfiles}
             />
             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-background/80 backdrop-blur-sm p-1 rounded-md border border-border">
-              {onUpdateTrainee && (
-                <TraineeEditForm
-                  traineeId={trainee.id}
-                  traineeName={trainee.name}
-                  notaRotacao={trainee.notaRotacao}
-                  rotacao={trainee.rotacao}
-                  onSave={(data) => onUpdateTrainee(trainee.id, data)}
-                />
-              )}
               {onUpdateUser && onDeleteUser && (
                 <UserEditModal
                   user={{
@@ -96,9 +87,17 @@ function TraineeGroup({
                     email: trainee.email,
                     cargo: "Trainee",
                     type: "trainee",
+                    rotacao: trainee.rotacao,
                   }}
                   currentUserRole={currentUserRole}
-                  onSave={(data) => onUpdateUser(trainee.id, data)}
+                  onSave={(data) => {
+                    // Save general user data
+                    onUpdateUser(trainee.id, data)
+                    // If rotacao was changed, also update via trainee endpoint
+                    if (data.rotacao !== undefined && onUpdateTrainee) {
+                      onUpdateTrainee(trainee.id, { rotacao: data.rotacao })
+                    }
+                  }}
                   onDelete={() => onDeleteUser(trainee.id)}
                 />
               )}

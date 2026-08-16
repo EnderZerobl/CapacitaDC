@@ -17,3 +17,7 @@ backend/app/__pycache__/
 # Next.js
 frontend/.next/
 frontend/out/
+
+# Uploads
+backend/uploads/
+

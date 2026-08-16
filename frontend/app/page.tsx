@@ -78,6 +78,16 @@ interface TrainingNode {
   user_score: number
 }
 
+/** Converts a UTC ISO string to the local "YYYY-MM-DDTHH:mm" format
+ * used by datetime-local inputs, so the displayed time matches the
+ * user's local timezone instead of UTC. */
+function utcToLocalInput(utcIso: string): string {
+  const d = new Date(utcIso)
+  // Shift by the local timezone offset to get local time as if it were UTC
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+  return local.toISOString().slice(0, 16)
+}
+
 export default function Dashboard() {
   const router = useRouter()
   const { user, logout, isLoading } = useAuth()
@@ -198,9 +208,7 @@ export default function Dashboard() {
         nodesData.forEach((n) => {
           initial[n.id] = {
             isReleased: n.is_released,
-            scheduledDate: n.released_at
-              ? new Date(n.released_at).toISOString().slice(0, 16)
-              : ""
+            scheduledDate: n.released_at ? utcToLocalInput(n.released_at) : ""
           }
         })
         setNodeReleaseState(initial)
@@ -457,7 +465,7 @@ export default function Dashboard() {
       type: nodeForm.type,
       eixo: nodeForm.eixo,
       activity_id: nodeForm.type === "activity" ? (nodeForm.activity_id || null) : null,
-      reference_id: nodeForm.type === "material" ? (nodeForm.reference_id || null) : (nodeForm.activity_id || null),
+      reference_id: nodeForm.type === "material" ? (nodeForm.reference_id || null) : null,
       deadline: deadlineIso,
       is_released: nodeForm.is_released,
       questions: nodeForm.type === "game" ? nodeForm.questions : [],
@@ -563,6 +571,15 @@ export default function Dashboard() {
       if (res.ok) {
         const updated: TrainingNode = await res.json()
         setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, ...updated } : n))
+        // Sync local release state so isDirty computes to false.
+        // Convert server UTC date back to local time (same format as datetime-local input)
+        setNodeReleaseState(prev => ({
+          ...prev,
+          [nodeId]: {
+            isReleased: updated.is_released,
+            scheduledDate: updated.released_at ? utcToLocalInput(updated.released_at) : ""
+          }
+        }))
       } else {
         const err = await res.json()
         alert(err.detail || "Erro ao atualizar liberação do nó")
@@ -1548,11 +1565,13 @@ export default function Dashboard() {
                             : ""
                         }
                         const { label, color, icon: StatusIcon } = getNodeStatus(node)
-                        const isDirty =
-                          localState.isReleased !== node.is_released ||
-                          (localState.scheduledDate
-                            ? new Date(localState.scheduledDate).toISOString()
-                            : null) !== node.released_at
+                        const isDirty = (() => {
+                          if (localState.isReleased !== node.is_released) return true
+                          // Both sides in local datetime-local format for accurate comparison
+                          const localDate = localState.scheduledDate || ""
+                          const serverDate = node.released_at ? utcToLocalInput(node.released_at) : ""
+                          return localDate !== serverDate
+                        })()
 
                         return (
                           <Card key={node.id} className="border-border bg-card">
