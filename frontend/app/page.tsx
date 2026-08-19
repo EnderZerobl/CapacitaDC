@@ -15,527 +15,189 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import {
-  Users,
-  FileQuestion,
-  LogOut,
-  User,
-  Shield,
-  Compass,
-  Lock,
-  Unlock,
-  Calendar,
-  BookOpen,
-  Gamepad2,
-  Clock,
-  CheckCircle2,
-  ClipboardList,
-  Plus,
-  ChevronDown,
-  ChevronUp,
-  Trash2,
-  ExternalLink,
-  Link2,
-  Upload,
-  XCircle,
-  Award,
-  Calculator,
-  Scale,
+  Users, FileQuestion, LogOut, User, Shield, Compass, Lock, Unlock,
+  Calendar, BookOpen, Gamepad2, Clock, CheckCircle2, ClipboardList,
+  Plus, ChevronDown, ChevronUp, Trash2, ExternalLink, Link2, Upload,
+  XCircle, Award, Calculator, Scale,
 } from "lucide-react"
 
-interface Member {
-  id: string
-  name: string
-  email: string
-  eixo: string
-  cargo: string
-  type: string
-  photo?: string
-}
-
-interface Trainee {
-  id: string
-  name: string
-  email: string
-  photo?: string
-  notaRotacao?: number
-  rotacao?: number | null
-}
-
-interface TrainingNode {
-  id: string
-  name: string
-  type: "activity" | "material" | "game"
-  eixo: string
-  reference_id?: string | null
-  activity_id?: string | null
-  deadline?: string | null
-  order_index?: number
-  is_released: boolean
-  released_at: string | null
-  released_by: string | null
-  unlocked: boolean
-  completed: boolean
-  user_score: number
-}
-
-/** Converts a UTC ISO string to the local "YYYY-MM-DDTHH:mm" format
- * used by datetime-local inputs, so the displayed time matches the
- * user's local timezone instead of UTC. */
-function utcToLocalInput(utcIso: string): string {
-  const d = new Date(utcIso)
-  // Shift by the local timezone offset to get local time as if it were UTC
-  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-  return local.toISOString().slice(0, 16)
-}
+import { useNodes, utcToLocalInput } from "@/features/nodes/hooks"
+import { useActivities } from "@/features/activities/hooks"
+import { useUsers } from "@/features/users/hooks"
+import { useMaterials } from "@/features/materials/hooks"
+import type { TrainingNode } from "@/features/nodes/types"
 
 export default function Dashboard() {
   const router = useRouter()
   const { user, logout, isLoading } = useAuth()
-  const [contents, setContents] = useState<ContentItem[]>([])
-  const [members, setMembers] = useState<Member[]>([])
-  const [trainees, setTrainees] = useState<Trainee[]>([])
-  const [nodes, setNodes] = useState<TrainingNode[]>([])
-  const [activities, setActivities] = useState<any[]>([])
-  const [expandedActivity, setExpandedActivity] = useState<string | null>(null)
-  const [activitySubmissions, setActivitySubmissions] = useState<Record<string, any[]>>({})
 
-  // New activity form state
-  const [newActivityForm, setNewActivityForm] = useState({
-    title: "",
-    description: "",
-    eixo: "trainee",
-    accepts_file: true,
-    deadline: "",
-    material_id: "",
-    weight: 1,
-  })
+  // Feature hooks
+  const { materials, createMaterial, updateMaterial, deleteMaterial } = useMaterials()
+  const contents: ContentItem[] = materials as unknown as ContentItem[]
+
+  const { members, trainees, grades, createUser, updateUser, deleteUser, updateTrainee } = useUsers()
+
+  const { nodes, nodeReleaseState, setNodeReleaseState, updateReleaseLocal, saveNodeRelease, moveNode, deleteNode, refresh: refreshNodes } = useNodes()
+
+  const {
+    activities, activitySubmissions, expandedActivity,
+    createActivity, toggleActivity, deleteActivity, loadSubmissions, gradeSubmission,
+  } = useActivities()
+
+  // Local UI state
   const [showActivityForm, setShowActivityForm] = useState(false)
-  const [gradeInputs, setGradeInputs] = useState<Record<string, { grade: string; feedback: string }>>({})
-  const [grades, setGrades] = useState<any[]>([])
-
-  // Node release UI state: nodeId → { is_released, released_at_input }
-  const [nodeReleaseState, setNodeReleaseState] = useState<
-    Record<string, { isReleased: boolean; scheduledDate: string }>
-  >({})
-
-  // ---------- New Node form state ----------
-  const [showNodeForm, setShowNodeForm] = useState(false)
-  const [nodeForm, setNodeForm] = useState({
-    name: "",
-    type: "activity" as "activity" | "material" | "game",
-    eixo: "trainee",
-    activity_id: "",
-    reference_id: "",
-    deadline: "",
-    is_released: false,
-    questions: [] as Array<{
-      text: string
-      explanation: string
-      options: Array<{ text: string; is_correct: boolean; score: number; feedback: string }>
-    }>,
+  const [newActivityForm, setNewActivityForm] = useState({
+    title: "", description: "", eixo: "trainee", accepts_file: true, deadline: "", material_id: "", weight: 1,
   })
-
-  // ---------- Weighted grade calculator state ----------
-  // activityId → weight (number, default 1)
+  const [gradeInputs, setGradeInputs] = useState<Record<string, { grade: string; feedback: string }>>({})
   const [activityWeights, setActivityWeights] = useState<Record<string, number>>({})
   const [weightedApplying, setWeightedApplying] = useState<string | null>(null)
-
-  const fetchData = async () => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-
-    try {
-      // Fetch users
-      const usersRes = await fetch("/api/users", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (usersRes.ok) {
-        const usersData = await usersRes.json()
-
-        const membersList = usersData
-          .filter((u: any) => u.type !== "trainee")
-          .map((u: any) => ({
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            eixo: u.eixo || "",
-            cargo: u.cargo,
-            type: u.type,
-            photo: u.photo || ""
-          }))
-        setMembers(membersList)
-
-        const traineesList = usersData
-          .filter((u: any) => u.type === "trainee")
-          .map((u: any) => ({
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            photo: u.photo || "",
-            notaRotacao: u.nota_rotacao !== null && u.nota_rotacao !== undefined ? u.nota_rotacao : undefined,
-            rotacao: u.rotacao ?? null,
-          }))
-        setTrainees(traineesList)
-      }
-
-      // Fetch materials
-      const materialsRes = await fetch("/api/materials", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (materialsRes.ok) {
-        const materialsData = await materialsRes.json()
-        const mappedMaterials = materialsData.map((m: any) => ({
-          id: m.id,
-          name: m.name,
-          type: m.type,
-          eixo: m.eixo,
-          text: m.text,
-          documents: m.documents || [],
-          videos: (m.videos || []).map((v: any) => v.url)
-        }))
-        setContents(mappedMaterials)
-      }
-
-      // Fetch training nodes
-      const nodesRes = await fetch("/api/nodes", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (nodesRes.ok) {
-        const nodesData: TrainingNode[] = await nodesRes.json()
-        setNodes(nodesData)
-        // Initialize local release state from server data
-        const initial: Record<string, { isReleased: boolean; scheduledDate: string }> = {}
-        nodesData.forEach((n) => {
-          initial[n.id] = {
-            isReleased: n.is_released,
-            scheduledDate: n.released_at ? utcToLocalInput(n.released_at) : ""
-          }
-        })
-        setNodeReleaseState(initial)
-      }
-
-      // Fetch activities
-      const activitiesRes = await fetch("/api/activities", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (activitiesRes.ok) {
-        setActivities(await activitiesRes.json())
-      }
-
-      // Fetch grades
-      const gradesRes = await fetch("/api/grades", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (gradesRes.ok) {
-        setGrades(await gradesRes.json())
-      }
-    } catch (e) {
-      console.error("Erro ao carregar dados do backend:", e)
-    }
-  }
+  const [showNodeForm, setShowNodeForm] = useState(false)
+  const [nodeForm, setNodeForm] = useState({
+    name: "", type: "activity" as "activity" | "material" | "game", eixo: "trainee",
+    activity_id: "", reference_id: "", deadline: "", is_released: false,
+    questions: [] as Array<{ text: string; explanation: string; options: Array<{ text: string; is_correct: boolean; score: number; feedback: string }> }>,
+  })
 
   useEffect(() => {
     if (!isLoading) {
-      if (!user) {
-        router.push("/login")
-      } else if (user.type !== "admin" && user.type !== "organizador") {
-        if (user.type === "membro") {
-          router.push("/membros")
-        } else {
-          router.push("/trainees")
-        }
-      } else {
-        fetchData()
+      if (!user) router.push("/login")
+      else if (user.type !== "admin" && user.type !== "organizador") {
+        router.push(user.type === "membro" ? "/membros" : "/trainees")
       }
     }
   }, [user, isLoading, router])
 
-  // ---------- Content handlers ----------
-  const handleUpdateContent = async (updatedContent: ContentItem) => {
-    const token = localStorage.getItem("token")
-    if (!token) return
+  const handleUpdateContent = async (updated: ContentItem) => {
     try {
-      const res = await fetch(`/api/materials/${updatedContent.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({
-          name: updatedContent.name,
-          type: updatedContent.type,
-          eixo: updatedContent.eixo,
-          text: updatedContent.text || "",
-          documents: (updatedContent.documents || []).map(doc => ({ name: doc.name, url: doc.url })),
-          videos: updatedContent.videos || []
-        })
+      await updateMaterial(updated.id, {
+        name: updated.name, type: updated.type, eixo: updated.eixo, text: updated.text || "",
+        documents: (updated.documents || []).map((d: any) => ({ name: d.name, url: d.url })),
+        videos: updated.videos || [],
       })
-      if (res.ok) {
-        const saved = await res.json()
-        const mapped: ContentItem = {
-          id: saved.id, name: saved.name, type: saved.type, eixo: saved.eixo,
-          text: saved.text, documents: saved.documents || [],
-          videos: (saved.videos || []).map((v: any) => v.url)
-        }
-        setContents(prev => prev.map(c => c.id === updatedContent.id ? mapped : c))
-      } else {
-        const err = await res.json()
-        alert(err.detail || "Erro ao atualizar material")
-      }
-    } catch (e) { console.error(e) }
+    } catch (e: any) { alert(e.message || "Erro ao atualizar material") }
   }
 
   const handleAddContent = async (newContent: ContentItem) => {
-    const token = localStorage.getItem("token")
-    if (!token) return
     try {
-      const res = await fetch("/api/materials", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({
-          name: newContent.name, type: newContent.type, eixo: newContent.eixo,
-          text: newContent.text || "",
-          documents: (newContent.documents || []).map(doc => ({ name: doc.name, url: doc.url })),
-          videos: newContent.videos || []
-        })
+      await createMaterial({
+        name: newContent.name, type: newContent.type, eixo: newContent.eixo, text: newContent.text || "",
+        documents: (newContent.documents || []).map((d: any) => ({ name: d.name, url: d.url })),
+        videos: newContent.videos || [],
       })
-      if (res.ok) {
-        const created = await res.json()
-        const mapped: ContentItem = {
-          id: created.id, name: created.name, type: created.type, eixo: created.eixo,
-          text: created.text, documents: created.documents || [],
-          videos: (created.videos || []).map((v: any) => v.url)
-        }
-        setContents(prev => [...prev, mapped])
-      } else {
-        const err = await res.json()
-        alert(err.detail || "Erro ao adicionar material")
-      }
-    } catch (e) { console.error(e) }
+    } catch (e: any) { alert(e.message || "Erro ao adicionar material") }
   }
 
   const handleDeleteContent = async (id: string) => {
-    const token = localStorage.getItem("token")
-    if (!token) return
     if (!confirm("Tem certeza que deseja excluir este material?")) return
-    try {
-      const res = await fetch(`/api/materials/${id}`, {
-        method: "DELETE", headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (res.ok) {
-        setContents(prev => prev.filter(c => c.id !== id))
-      } else {
-        const err = await res.json()
-        alert(err.detail || "Erro ao excluir material")
-      }
-    } catch (e) { console.error(e) }
+    try { await deleteMaterial(id) } catch (e: any) { alert(e.message || "Erro ao excluir material") }
   }
 
-  // ---------- Member handler ----------
   const handleAddMember = async (data: {
-    name: string
-    email: string
-    cargo: "admin" | "organizador" | "membro" | "trainee"
-    password?: string
-    eixo?: "vendas" | "conexoes" | "experiencia"
+    name: string; email: string; cargo: "admin" | "organizador" | "membro" | "trainee";
+    password?: string; eixo?: "vendas" | "conexoes" | "experiencia"
   }) => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-
     let userType = "membro"
     if (data.cargo === "trainee") userType = "trainee"
     else if (data.cargo === "admin") userType = "admin"
     else if (data.cargo === "organizador") userType = "organizador"
-
     try {
-      const res = await fetch("/api/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ name: data.name, email: data.email, cargo: data.cargo, type: userType, eixo: data.eixo, password: data.password })
-      })
-      if (res.ok) {
-        const newUser = await res.json()
-        if (newUser.type === "trainee") {
-          setTrainees(prev => [...prev, {
-            id: newUser.id, name: newUser.name, email: newUser.email,
-            photo: newUser.photo || "",
-            notaRotacao: newUser.nota_rotacao !== null && newUser.nota_rotacao !== undefined ? newUser.nota_rotacao : undefined,
-          }])
-        } else {
-          setMembers(prev => [...prev, {
-            id: newUser.id, name: newUser.name, email: newUser.email,
-            eixo: newUser.eixo || "", cargo: newUser.cargo, type: newUser.type || "membro", photo: newUser.photo || ""
-          }])
-        }
-      } else {
-        const err = await res.json()
-        alert(err.detail || "Erro ao adicionar membro/trainee")
-      }
-    } catch (e) {
-      console.error(e)
-      alert("Erro ao conectar com o servidor")
-    }
+      await createUser({ name: data.name, email: data.email, cargo: data.cargo, type: userType, eixo: data.eixo, password: data.password })
+    } catch (e: any) { alert(e.message || "Erro ao adicionar membro/trainee") }
   }
 
-  // ---------- Trainee nota + rotacao handler ----------
-  const handleUpdateTrainee = async (
-    traineeId: string,
-    data: { notaRotacao?: number; rotacao?: number }
-  ) => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-    try {
-      const res = await fetch(`/api/users/trainees/${traineeId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ notaRotacao: data.notaRotacao, rotacao: data.rotacao })
-      })
-      if (res.ok) {
-        const updated = await res.json()
-        setTrainees(prev => prev.map(t =>
-          t.id === traineeId
-            ? {
-                ...t,
-                notaRotacao: updated.nota_rotacao != null ? updated.nota_rotacao : undefined,
-                rotacao: updated.rotacao ?? null,
-              }
-            : t
-        ))
-        // Refresh grades
-        const gr = await fetch("/api/grades", { headers: { "Authorization": `Bearer ${token}` } })
-        if (gr.ok) setGrades(await gr.json())
-      } else {
-        const err = await res.json()
-        alert(err.detail || "Erro ao atualizar trainee")
-      }
-    } catch (e) { console.error(e) }
+  const handleUpdateTrainee = async (traineeId: string, data: { notaRotacao?: number; rotacao?: number }) => {
+    try { await updateTrainee(traineeId, { notaRotacao: data.notaRotacao, rotacao: data.rotacao }) }
+    catch (e: any) { alert(e.message || "Erro ao atualizar trainee") }
   }
 
   const handleUpdateUser = async (userId: string, data: any) => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-    try {
-      const res = await fetch(`/api/users/${userId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify(data)
-      })
-      if (res.ok) {
-        await fetchData()
-      } else {
-        const err = await res.json()
-        alert(err.detail || "Erro ao atualizar usuário")
-      }
-    } catch (e) {
-      console.error(e)
-    }
+    try { await updateUser(userId, data) } catch (e: any) { alert(e.message || "Erro ao atualizar usuário") }
   }
 
   const handleDeleteUser = async (userId: string) => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-    try {
-      const res = await fetch(`/api/users/${userId}`, {
-        method: "DELETE",
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (res.ok) {
-        await fetchData()
-      } else {
-        const err = await res.json()
-        alert(err.detail || "Erro ao excluir usuário")
-      }
-    } catch (e) {
-      console.error(e)
-    }
+    try { await deleteUser(userId) } catch (e: any) { alert(e.message || "Erro ao excluir usuário") }
   }
 
-  // ---------- Node create / delete handlers ----------
   const handleCreateNode = async () => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-
     let deadlineIso: string | null = null
-    if (nodeForm.deadline) {
-      const d = new Date(nodeForm.deadline)
-      if (!isNaN(d.getTime())) {
-        deadlineIso = d.toISOString()
-      }
-    }
-
+    if (nodeForm.deadline) { const d = new Date(nodeForm.deadline); if (!isNaN(d.getTime())) deadlineIso = d.toISOString() }
     const payload: any = {
-      name: nodeForm.name.trim() || null,
-      type: nodeForm.type,
-      eixo: nodeForm.eixo,
+      name: nodeForm.name.trim() || null, type: nodeForm.type, eixo: nodeForm.eixo,
       activity_id: nodeForm.type === "activity" ? (nodeForm.activity_id || null) : null,
       reference_id: nodeForm.type === "material" ? (nodeForm.reference_id || null) : null,
-      deadline: deadlineIso,
-      is_released: nodeForm.is_released,
+      deadline: deadlineIso, is_released: nodeForm.is_released,
       questions: nodeForm.type === "game" ? nodeForm.questions : [],
     }
     try {
+      const token = localStorage.getItem("token")
       const res = await fetch("/api/nodes", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify(payload),
       })
       if (res.ok) {
-        const created = await res.json()
-        setNodes(prev => [...prev, created])
-        setNodeReleaseState(prev => ({
-          ...prev,
-          [created.id]: { isReleased: created.is_released, scheduledDate: "" }
-        }))
+        await refreshNodes()
         setShowNodeForm(false)
         setNodeForm({ name: "", type: "activity", eixo: "trainee", activity_id: "", reference_id: "", deadline: "", is_released: false, questions: [] })
-      } else {
-        const text = await res.text()
-        try {
-          const err = JSON.parse(text)
-          alert(err.detail || "Erro ao criar nó")
-        } catch {
-          alert("Erro no servidor: " + (text || res.statusText))
-        }
-      }
-    } catch (e: any) {
-      console.error(e)
-      alert("Erro ao criar nó: " + (e?.message || e))
-    }
+      } else { const err = await res.json(); alert(err.detail || "Erro ao criar nó") }
+    } catch (e: any) { alert("Erro ao criar nó: " + (e?.message || e)) }
   }
 
   const handleDeleteNode = async (nodeId: string) => {
     if (!confirm("Tem certeza que deseja excluir este nó da trilha?")) return
-    const token = localStorage.getItem("token")
-    if (!token) return
-    try {
-      const res = await fetch(`/api/nodes/${nodeId}`, {
-        method: "DELETE",
-        headers: { "Authorization": `Bearer ${token}` },
-      })
-      if (res.ok) {
-        setNodes(prev => prev.filter(n => n.id !== nodeId))
-      } else {
-        const err = await res.json()
-        alert(err.detail || "Erro ao excluir nó")
-      }
-    } catch (e) { console.error(e) }
+    try { await deleteNode(nodeId) } catch (e: any) { alert(e.message || "Erro ao excluir nó") }
   }
 
-  // ---------- Weighted average handler ----------
-  // Given trainee activities from /api/activities (with grades via submissions),
-  // compute: Σ(grade × weight) / Σ(weight) for activities with a grade
+  const handleSaveNodeRelease = async (nodeId: string) => {
+    try { await saveNodeRelease(nodeId) } catch (e: any) { alert(e.message || "Erro ao atualizar liberação do nó") }
+  }
+
+  const handleMoveNode = async (nodeId: string, direction: "up" | "down", eixo: string) => {
+    try { await moveNode(nodeId, direction, eixo) } catch (e: any) { console.error(e) }
+  }
+
+  const handleCreateActivity = async () => {
+    try {
+      await createActivity({
+        title: newActivityForm.title, description: newActivityForm.description,
+        eixo: newActivityForm.eixo, accepts_file: newActivityForm.accepts_file,
+        deadline: newActivityForm.deadline ? new Date(newActivityForm.deadline).toISOString() : null,
+        material_id: newActivityForm.material_id || null, weight: Number(newActivityForm.weight) || 1,
+      })
+      setNewActivityForm({ title: "", description: "", eixo: "trainee", accepts_file: true, deadline: "", material_id: "", weight: 1 })
+      setShowActivityForm(false)
+    } catch (e: any) { alert(e.message || "Erro ao criar atividade") }
+  }
+
+  const handleToggleActivity = async (activityId: string, currentOpen: boolean) => {
+    try { await toggleActivity(activityId, currentOpen) } catch (e: any) { alert(e.message) }
+  }
+
+  const handleDeleteActivity = async (activityId: string) => {
+    if (!confirm("Tem certeza que deseja excluir esta atividade?")) return
+    try { await deleteActivity(activityId) } catch (e: any) { alert(e.message) }
+  }
+
+  const handleLoadSubmissions = async (activityId: string) => {
+    try { await loadSubmissions(activityId) } catch (e: any) { console.error(e) }
+  }
+
+  const handleGradeSubmission = async (activityId: string, submissionId: string) => {
+    const g = gradeInputs[submissionId] || { grade: "", feedback: "" }
+    const gradeNum = parseFloat(g.grade)
+    if (isNaN(gradeNum) || gradeNum < 0 || gradeNum > 10) { alert("Nota inválida. Use um valor entre 0 e 10."); return }
+    try { await gradeSubmission(activityId, submissionId, gradeNum, g.feedback) }
+    catch (e: any) { alert(e.message || "Erro ao avaliar") }
+  }
+
   const computeWeightedAvg = (traineeId: string): number | null => {
-    const traineeActivities = activities.filter(a => {
-      // Get trainee's rotation to filter by eixo
-      const t = trainees.find(t => t.id === traineeId)
-      return a.eixo === "trainee" || a.eixo === "all"
-    })
+    const traineeActivities = activities.filter(a => a.eixo === "trainee" || a.eixo === "all")
     let sumGW = 0, sumW = 0
     for (const act of traineeActivities) {
       const subs = activitySubmissions[act.id] || []
       const sub = subs.find((s: any) => s.user_id === traineeId)
-      if (sub && sub.grade != null) {
-        const w = activityWeights[act.id] ?? act.weight ?? 1
-        sumGW += sub.grade * w
-        sumW += w
-      }
+      if (sub && sub.grade != null) { const w = activityWeights[act.id] ?? act.weight ?? 1; sumGW += sub.grade * w; sumW += w }
     }
     return sumW > 0 ? Math.round((sumGW / sumW) * 100) / 100 : null
   }
@@ -548,197 +210,7 @@ export default function Dashboard() {
     setWeightedApplying(null)
   }
 
-  // ---------- Node release handler ----------
-  const handleSaveNodeRelease = async (nodeId: string) => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-    const state = nodeReleaseState[nodeId]
-    if (!state) return
-
-    const payload: { is_released: boolean; released_at: string | null } = {
-      is_released: state.isReleased,
-      released_at: state.isReleased && state.scheduledDate
-        ? new Date(state.scheduledDate).toISOString()
-        : null
-    }
-
-    try {
-      const res = await fetch(`/api/nodes/${nodeId}/release`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify(payload)
-      })
-      if (res.ok) {
-        const updated: TrainingNode = await res.json()
-        setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, ...updated } : n))
-        // Sync local release state so isDirty computes to false.
-        // Convert server UTC date back to local time (same format as datetime-local input)
-        setNodeReleaseState(prev => ({
-          ...prev,
-          [nodeId]: {
-            isReleased: updated.is_released,
-            scheduledDate: updated.released_at ? utcToLocalInput(updated.released_at) : ""
-          }
-        }))
-      } else {
-        const err = await res.json()
-        alert(err.detail || "Erro ao atualizar liberação do nó")
-      }
-    } catch (e) { console.error(e) }
-  }
-
-  const handleMoveNode = async (nodeId: string, direction: "up" | "down", eixo: string) => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-    const eixoNodes = nodes.filter(n => n.eixo === eixo).sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
-    const index = eixoNodes.findIndex(n => n.id === nodeId)
-    if (index === -1) return
-    let targetIndex = direction === "up" ? index - 1 : index + 1
-    if (targetIndex < 0 || targetIndex >= eixoNodes.length) return
-
-    const currentNode = eixoNodes[index]
-    const targetNode = eixoNodes[targetIndex]
-
-    const curIdx = currentNode.order_index ?? 0
-    const tarIdx = targetNode.order_index ?? 0
-
-    let newCurIdx = tarIdx
-    let newTarIdx = curIdx
-    if (curIdx === tarIdx) {
-      newCurIdx = direction === "up" ? curIdx - 1 : curIdx + 1
-      newTarIdx = curIdx
-    }
-
-    try {
-      await Promise.all([
-        fetch(`/api/nodes/${currentNode.id}/order`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-          body: JSON.stringify({ order_index: newCurIdx })
-        }),
-        fetch(`/api/nodes/${targetNode.id}/order`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-          body: JSON.stringify({ order_index: newTarIdx })
-        })
-      ])
-
-      const nodesRes = await fetch("/api/nodes", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (nodesRes.ok) {
-        setNodes(await nodesRes.json())
-      }
-    } catch (e) {
-      console.error(e)
-    }
-  }
-
-  const handleLogout = () => {
-    logout()
-    router.push("/login")
-  }
-
-  // ---------- Activity handlers ----------
-  const handleCreateActivity = async () => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-    const payload = {
-      title: newActivityForm.title,
-      description: newActivityForm.description,
-      eixo: newActivityForm.eixo,
-      accepts_file: newActivityForm.accepts_file,
-      deadline: newActivityForm.deadline ? new Date(newActivityForm.deadline).toISOString() : null,
-      material_id: newActivityForm.material_id || null,
-      weight: Number(newActivityForm.weight) || 1,
-    }
-    try {
-      const res = await fetch("/api/activities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify(payload)
-      })
-      if (res.ok) {
-        const created = await res.json()
-        setActivities(prev => [created, ...prev])
-        setNewActivityForm({ title: "", description: "", eixo: "trainee", accepts_file: true, deadline: "", material_id: "", weight: 1 })
-        setShowActivityForm(false)
-      } else {
-        const err = await res.json()
-        alert(err.detail || "Erro ao criar atividade")
-      }
-    } catch (e) { console.error(e) }
-  }
-
-  const handleToggleActivity = async (activityId: string, currentOpen: boolean) => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-    try {
-      const res = await fetch(`/api/activities/${activityId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ is_open: !currentOpen })
-      })
-      if (res.ok) {
-        const updated = await res.json()
-        setActivities(prev => prev.map(a => a.id === activityId ? updated : a))
-      }
-    } catch (e) { console.error(e) }
-  }
-
-  const handleDeleteActivity = async (activityId: string) => {
-    if (!confirm("Tem certeza que deseja excluir esta atividade?")) return
-    const token = localStorage.getItem("token")
-    if (!token) return
-    try {
-      const res = await fetch(`/api/activities/${activityId}`, {
-        method: "DELETE",
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (res.ok) setActivities(prev => prev.filter(a => a.id !== activityId))
-    } catch (e) { console.error(e) }
-  }
-
-  const handleLoadSubmissions = async (activityId: string) => {
-    if (expandedActivity === activityId) { setExpandedActivity(null); return }
-    const token = localStorage.getItem("token")
-    if (!token) return
-    try {
-      const res = await fetch(`/api/activities/${activityId}/submissions`, {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const subs = await res.json()
-        setActivitySubmissions(prev => ({ ...prev, [activityId]: subs }))
-        setExpandedActivity(activityId)
-      }
-    } catch (e) { console.error(e) }
-  }
-
-  const handleGradeSubmission = async (activityId: string, submissionId: string) => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-    const g = gradeInputs[submissionId] || { grade: "", feedback: "" }
-    const gradeNum = parseFloat(g.grade)
-    if (isNaN(gradeNum) || gradeNum < 0 || gradeNum > 10) {
-      alert("Nota inválida. Use um valor entre 0 e 10.")
-      return
-    }
-    try {
-      const res = await fetch(`/api/activities/${activityId}/submissions/${submissionId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ grade: gradeNum, feedback: g.feedback })
-      })
-      if (res.ok) {
-        const updated = await res.json()
-        setActivitySubmissions(prev => ({
-          ...prev,
-          [activityId]: (prev[activityId] || []).map(s => s.id === submissionId ? updated : s)
-        }))
-      }
-    } catch (e) { console.error(e) }
-  }
+  const handleLogout = () => { logout(); router.push("/login") }
 
   if (isLoading) {
     return (
@@ -750,35 +222,23 @@ export default function Dashboard() {
 
   const isOrg = user?.type === "organizador"
 
-  // Helper: node release status label
   function getNodeStatus(node: TrainingNode) {
     if (!node.is_released) return { label: "Bloqueado", color: "text-rose-400 border-rose-500/30", icon: Lock }
     if (node.released_at) {
       const releaseDate = new Date(node.released_at)
-      if (releaseDate > new Date()) {
-        return { label: `Agendado: ${releaseDate.toLocaleString("pt-BR")}`, color: "text-amber-400 border-amber-500/30", icon: Clock }
-      }
+      if (releaseDate > new Date()) return { label: `Agendado`, color: "text-amber-400 border-amber-500/30", icon: Clock }
     }
     return { label: "Liberado", color: "text-emerald-400 border-emerald-500/30", icon: CheckCircle2 }
   }
 
-  // Group nodes by eixo and sort by order_index
   const nodesByEixo: Record<string, TrainingNode[]> = {}
   const filteredNodes = isOrg ? nodes.filter(n => n.eixo === "trainee") : nodes
-  filteredNodes.forEach(n => {
-    if (!nodesByEixo[n.eixo]) nodesByEixo[n.eixo] = []
-    nodesByEixo[n.eixo].push(n)
-  })
-  Object.keys(nodesByEixo).forEach(key => {
-    nodesByEixo[key].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
-  })
+  filteredNodes.forEach(n => { if (!nodesByEixo[n.eixo]) nodesByEixo[n.eixo] = []; nodesByEixo[n.eixo].push(n) })
+  Object.keys(nodesByEixo).forEach(key => { nodesByEixo[key].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)) })
 
   const eixoLabel: Record<string, string> = {
-    trainee: "Trainee (Geral)",
-    vendas: "Vendas",
-    conexoes: "Conexões",
-    experiencia: "Experiência do Consumidor",
-    pluginfo: "PlugInfo",
+    trainee: "Trainee (Geral)", vendas: "Vendas", conexoes: "Conexões",
+    experiencia: "Experiência do Consumidor", pluginfo: "PlugInfo",
   }
 
   return (

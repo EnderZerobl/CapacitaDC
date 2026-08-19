@@ -15,226 +15,88 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
-  Compass,
-  LogOut,
-  User,
-  Trophy,
-  GraduationCap,
-  FileText,
-  Video,
-  ExternalLink,
-  Award,
-  ClipboardList,
-  Upload,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  Link2,
-  BookOpen,
-  Search,
+  Compass, LogOut, User, Trophy, GraduationCap, FileText, Video,
+  ExternalLink, Award, ClipboardList, Upload, Clock, CheckCircle2,
+  XCircle, Link2, BookOpen, Search,
 } from "lucide-react"
 
-interface LeaderboardEntry {
-  id: string
-  name: string
-  email: string
-  cargo: string
-  type: string
-  eixo?: string
-  pontos_acumulados: number
-}
+import { useNodes } from "@/features/nodes/hooks"
+import { useActivities } from "@/features/activities/hooks"
+import { useMaterials } from "@/features/materials/hooks"
 
-interface Activity {
-  id: string
-  title: string
-  description?: string
-  eixo: string
-  material_id?: string | null
-  accepts_file: boolean
-  deadline?: string | null
-  is_open: boolean
-  effective_open: boolean
-  submission_count: number
-  my_submission?: {
-    id: string
-    file_url?: string | null
-    comment?: string
-    submitted_at?: string | null
-    grade?: number | null
-    feedback?: string
-  } | null
+interface LeaderboardEntry {
+  id: string; name: string; email: string; cargo: string; type: string; eixo?: string; pontos_acumulados: number
 }
 
 export default function TraineesPage() {
   const router = useRouter()
   const { user, logout, isLoading } = useAuth()
 
-  // Data states
-  const [contents, setContents] = useState<ContentItem[]>([])
-  const [nodes, setNodes] = useState<any[]>([])
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
-  const [activities, setActivities] = useState<Activity[]>([])
+  const { materials } = useMaterials()
+  const contents: ContentItem[] = materials as unknown as ContentItem[]
+  const { nodes, completeNode, submitGame } = useNodes()
+  const { activities, submitActivity: submitActivityHook } = useActivities()
 
-  // Activity submit state: activityId → { fileUrl, comment }
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [submitState, setSubmitState] = useState<Record<string, { fileUrl: string; comment: string }>>({})
   const [submitting, setSubmitting] = useState<string | null>(null)
-
-  // UI states
   const [activeTab, setActiveTab] = useState("trilha")
   const [selectedNode, setSelectedNode] = useState<any | null>(null)
   const [isPlayingGame, setIsPlayingGame] = useState(false)
   const [isReadingMaterial, setIsReadingMaterial] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
 
-  const fetchData = async () => {
+  const fetchLeaderboard = async () => {
     const token = localStorage.getItem("token")
     if (!token) return
-
     try {
-      // 1. Fetch Materials
-      const matRes = await fetch("/api/materials", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (matRes.ok) {
-        const matData = await matRes.json()
-        const mapped = matData.map((m: any) => ({
-          id: m.id,
-          name: m.name,
-          type: m.type,
-          eixo: m.eixo,
-          text: m.text,
-          documents: m.documents || [],
-          videos: (m.videos || []).map((v: any) => v.url)
-        }))
-        setContents(mapped)
-      }
-
-      // 2. Fetch Training Nodes (Graph)
-      const nodesRes = await fetch("/api/nodes", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (nodesRes.ok) {
-        const nodesData = await nodesRes.json()
-        setNodes(nodesData)
-      }
-
-      // 3. Fetch Leaderboard
-      const leaderboardRes = await fetch("/api/leaderboard", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (leaderboardRes.ok) {
-        const leaderboardData = await leaderboardRes.json()
-        setLeaderboard(leaderboardData)
-      }
-
-      // 4. Fetch Activities
-      const activitiesRes = await fetch("/api/activities", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (activitiesRes.ok) {
-        const activitiesData = await activitiesRes.json()
-        setActivities(activitiesData)
-      }
-    } catch (e) {
-      console.error("Erro ao carregar dados do trainee:", e)
-    }
-  }
-
-  const handleSubmitActivity = async (activityId: string) => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-    const state = submitState[activityId] || { fileUrl: "", comment: "" }
-    setSubmitting(activityId)
-    try {
-      const res = await fetch(`/api/activities/${activityId}/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ file_url: state.fileUrl || null, comment: state.comment || "" })
-      })
-      if (res.ok) {
-        fetchData()
-      } else {
-        const err = await res.json()
-        alert(err.detail || "Erro ao enviar atividade")
-      }
+      const res = await fetch("/api/leaderboard", { headers: { "Authorization": `Bearer ${token}` } })
+      if (res.ok) setLeaderboard(await res.json())
     } catch (e) { console.error(e) }
-    finally { setSubmitting(null) }
   }
 
   useEffect(() => {
     if (!isLoading) {
-      if (!user) {
-        router.push("/login")
-      } else if (user.type === "admin") {
-        router.push("/")
-      } else if (user.type === "membro") {
-        router.push("/membros")
-      } else {
-        fetchData()
-      }
+      if (!user) router.push("/login")
+      else if (user.type === "admin") router.push("/")
+      else if (user.type === "membro") router.push("/membros")
+      else fetchLeaderboard()
     }
   }, [user, isLoading, router])
 
-  const handleLogout = () => {
-    logout()
-    router.push("/login")
+  const handleSubmitActivity = async (activityId: string) => {
+    const state = submitState[activityId] || { fileUrl: "", comment: "" }
+    setSubmitting(activityId)
+    try {
+      await submitActivityHook(activityId, state.fileUrl || null, state.comment || "")
+    } catch (e: any) { alert(e.message || "Erro ao enviar atividade") }
+    finally { setSubmitting(null) }
   }
 
-  // Node selection triggers game or material view
+  const handleLogout = () => { logout(); router.push("/login") }
+
   const handleSelectNode = (node: any) => {
     setSelectedNode(node)
-    if (node.type === "game") {
-      setIsPlayingGame(true)
-    } else {
-      setIsReadingMaterial(true)
-    }
+    if (node.type === "game") setIsPlayingGame(true)
+    else setIsReadingMaterial(true)
   }
 
-  // Submit Game points
   const handleGameComplete = async (score: number) => {
-    const token = localStorage.getItem("token")
-    if (!token || !selectedNode) return
-
+    if (!selectedNode) return
     try {
-      const res = await fetch(`/api/nodes/${selectedNode.id}/submit-game`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ score })
-      })
-
-      if (res.ok) {
-        setIsPlayingGame(false)
-        setSelectedNode(null)
-        fetchData()
-      } else {
-        alert("Erro ao registrar pontuação")
-      }
-    } catch (e) {
-      console.error(e)
-    }
+      await submitGame(selectedNode.id, score)
+      setIsPlayingGame(false)
+      setSelectedNode(null)
+    } catch { alert("Erro ao registrar pontuação") }
   }
 
-  // Complete reading material
   const handleCompleteMaterial = async () => {
-    const token = localStorage.getItem("token")
-    if (!token || !selectedNode) return
-
+    if (!selectedNode) return
     try {
-      const res = await fetch(`/api/nodes/${selectedNode.id}/complete`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-
-      if (res.ok) {
-        setIsReadingMaterial(false)
-        setSelectedNode(null)
-        fetchData()
-      } else {
-        alert("Erro ao salvar progresso")
-      }
-    } catch (e) {
-      console.error(e)
-    }
+      await completeNode(selectedNode.id)
+      setIsReadingMaterial(false)
+      setSelectedNode(null)
+    } catch { alert("Erro ao salvar progresso") }
   }
 
   if (isLoading) {
@@ -245,13 +107,12 @@ export default function TraineesPage() {
     )
   }
 
-  // Find activity and material for selectedNode
   const relatedActivity = selectedNode
-    ? (activities.find(a => a.id === selectedNode.activity_id) || activities.find(a => a.id === selectedNode.reference_id))
+    ? (activities.find((a: any) => a.id === selectedNode.activity_id) || activities.find((a: any) => a.id === selectedNode.reference_id))
     : null
 
   const activeMaterial = selectedNode
-    ? (contents.find(c => c.id === selectedNode.reference_id) || (relatedActivity ? contents.find(c => c.id === relatedActivity.material_id) : null))
+    ? (contents.find(c => c.id === selectedNode.reference_id) || (relatedActivity ? contents.find(c => c.id === (relatedActivity as any).material_id) : null))
     : null
 
   return (
@@ -357,7 +218,7 @@ export default function TraineesPage() {
 
             <div className="flex justify-center py-6 bg-card rounded-2xl border border-border">
               <TrainingPath
-                nodes={nodes}
+                nodes={nodes as any[]}
                 onSelectNode={handleSelectNode}
                 highlighted={true}
               />

@@ -15,46 +15,30 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Card, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import {
-  LayoutGrid,
-  Search,
-  LogOut,
-  User,
-  BookOpen,
-  Trophy,
-  Compass,
-  FileText,
-  Video,
-  ExternalLink,
-  Award,
-  ClipboardList,
-  Upload,
-  Clock,
-  Link2
+  LayoutGrid, Search, LogOut, User, BookOpen, Trophy, Compass,
+  FileText, Video, ExternalLink, Award, ClipboardList, Upload, Clock, Link2
 } from "lucide-react"
 
+import { useNodes } from "@/features/nodes/hooks"
+import { useActivities } from "@/features/activities/hooks"
+import { useMaterials } from "@/features/materials/hooks"
+
 interface LeaderboardEntry {
-  id: string
-  name: string
-  email: string
-  cargo: string
-  type: string
-  eixo?: string
-  pontos_acumulados: number
+  id: string; name: string; email: string; cargo: string; type: string; eixo?: string; pontos_acumulados: number
 }
 
 export default function MembrosPage() {
   const router = useRouter()
   const { user, logout, isLoading } = useAuth()
-  
-  // Data states
-  const [contents, setContents] = useState<ContentItem[]>([])
-  const [nodes, setNodes] = useState<any[]>([])
+
+  const { materials } = useMaterials()
+  const contents: ContentItem[] = materials as unknown as ContentItem[]
+  const { nodes, completeNode, submitGame } = useNodes()
+  const { activities, submitActivity: submitActivityHook } = useActivities()
+
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
-  const [activities, setActivities] = useState<any[]>([])
   const [submitState, setSubmitState] = useState<Record<string, { fileUrl: string; comment: string }>>({})
   const [submitting, setSubmitting] = useState<string | null>(null)
-  
-  // UI states
   const [activeTab, setActiveTab] = useState("trilhas")
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedNode, setSelectedNode] = useState<any | null>(null)
@@ -62,157 +46,56 @@ export default function MembrosPage() {
   const [isReadingMaterial, setIsReadingMaterial] = useState(false)
   const [selectedEixo, setSelectedEixo] = useState<string>("todos")
 
-  const fetchData = async () => {
+  const fetchLeaderboard = async () => {
     const token = localStorage.getItem("token")
     if (!token) return
-
     try {
-      // 1. Fetch Materials
-      const matRes = await fetch("/api/materials", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (matRes.ok) {
-        const matData = await matRes.json()
-        const mapped = matData.map((m: any) => ({
-          id: m.id,
-          name: m.name,
-          type: m.type,
-          eixo: m.eixo,
-          text: m.text,
-          documents: m.documents || [],
-          videos: (m.videos || []).map((v: any) => v.url)
-        }))
-        setContents(mapped)
-      }
-
-      // 2. Fetch Training Nodes (Graph)
-      const nodesRes = await fetch("/api/nodes", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (nodesRes.ok) {
-        const nodesData = await nodesRes.json()
-        setNodes(nodesData)
-      }
-
-      // 3. Fetch Leaderboard
-      const leaderboardRes = await fetch("/api/leaderboard", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (leaderboardRes.ok) {
-        const leaderboardData = await leaderboardRes.json()
-        setLeaderboard(leaderboardData)
-      }
-
-      // 4. Fetch Activities
-      const activitiesRes = await fetch("/api/activities", {
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-      if (activitiesRes.ok) {
-        setActivities(await activitiesRes.json())
-      }
-    } catch (e) {
-      console.error("Erro ao carregar dados do portal:", e)
-    }
-  }
-
-  const handleSubmitActivity = async (activityId: string) => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-    const state = submitState[activityId] || { fileUrl: "", comment: "" }
-    setSubmitting(activityId)
-    try {
-      const res = await fetch(`/api/activities/${activityId}/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify({ file_url: state.fileUrl || null, comment: state.comment || "" })
-      })
-      if (res.ok) {
-        fetchData()
-      } else {
-        const err = await res.json()
-        alert(err.detail || "Erro ao enviar atividade")
-      }
+      const res = await fetch("/api/leaderboard", { headers: { "Authorization": `Bearer ${token}` } })
+      if (res.ok) setLeaderboard(await res.json())
     } catch (e) { console.error(e) }
-    finally { setSubmitting(null) }
   }
 
   useEffect(() => {
     if (!isLoading) {
-      if (!user) {
-        router.push("/login")
-      } else if (user.type === "trainee") {
-        router.push("/trainees")
-      } else {
-        fetchData()
-      }
+      if (!user) router.push("/login")
+      else if (user.type === "trainee") router.push("/trainees")
+      else fetchLeaderboard()
     }
   }, [user, isLoading, router])
 
-  const handleLogout = () => {
-    logout()
-    router.push("/login")
+  const handleSubmitActivity = async (activityId: string) => {
+    const state = submitState[activityId] || { fileUrl: "", comment: "" }
+    setSubmitting(activityId)
+    try {
+      await submitActivityHook(activityId, state.fileUrl || null, state.comment || "")
+    } catch (e: any) { alert(e.message || "Erro ao enviar atividade") }
+    finally { setSubmitting(null) }
   }
 
-  // Node selection triggers game or material view
+  const handleLogout = () => { logout(); router.push("/login") }
+
   const handleSelectNode = (node: any) => {
     setSelectedNode(node)
-    if (node.type === "game") {
-      setIsPlayingGame(true)
-    } else {
-      setIsReadingMaterial(true)
-    }
+    if (node.type === "game") setIsPlayingGame(true)
+    else setIsReadingMaterial(true)
   }
 
-  // Submit Game points
   const handleGameComplete = async (score: number) => {
-    const token = localStorage.getItem("token")
-    if (!token || !selectedNode) return
-
+    if (!selectedNode) return
     try {
-      const res = await fetch(`/api/nodes/${selectedNode.id}/submit-game`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({ score })
-      })
-
-      if (res.ok) {
-        setIsPlayingGame(false)
-        setSelectedNode(null)
-        // Refresh all data
-        fetchData()
-      } else {
-        alert("Erro ao registrar pontuação")
-      }
-    } catch (e) {
-      console.error(e)
-    }
+      await submitGame(selectedNode.id, score)
+      setIsPlayingGame(false)
+      setSelectedNode(null)
+    } catch { alert("Erro ao registrar pontuação") }
   }
 
-  // Complete reading material
   const handleCompleteMaterial = async () => {
-    const token = localStorage.getItem("token")
-    if (!token || !selectedNode) return
-
+    if (!selectedNode) return
     try {
-      const res = await fetch(`/api/nodes/${selectedNode.id}/complete`, {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${token}` }
-      })
-
-      if (res.ok) {
-        setIsReadingMaterial(false)
-        setSelectedNode(null)
-        // Refresh all data
-        fetchData()
-      } else {
-        alert("Erro ao salvar progresso")
-      }
-    } catch (e) {
-      console.error(e)
-    }
+      await completeNode(selectedNode.id)
+      setIsReadingMaterial(false)
+      setSelectedNode(null)
+    } catch { alert("Erro ao salvar progresso") }
   }
 
   if (isLoading) {
@@ -223,21 +106,18 @@ export default function MembrosPage() {
     )
   }
 
-  // Group nodes by axis/eixo
   const salesNodes = nodes.filter(n => n.eixo === "vendas")
   const connectionsNodes = nodes.filter(n => n.eixo === "conexoes")
   const cxNodes = nodes.filter(n => n.eixo === "experiencia")
 
-  // Find activity and material for selectedNode
   const relatedActivity = selectedNode
-    ? (activities.find(a => a.id === selectedNode.activity_id) || activities.find(a => a.id === selectedNode.reference_id))
+    ? (activities.find((a: any) => a.id === selectedNode.activity_id) || activities.find((a: any) => a.id === selectedNode.reference_id))
     : null
 
   const activeMaterial = selectedNode
-    ? (contents.find(c => c.id === selectedNode.reference_id) || (relatedActivity ? contents.find(c => c.id === relatedActivity.material_id) : null))
+    ? (contents.find(c => c.id === selectedNode.reference_id) || (relatedActivity ? contents.find(c => c.id === (relatedActivity as any).material_id) : null))
     : null
 
-  // Filter contents list search
   const filteredContents = contents.filter((content) =>
     content.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
@@ -322,7 +202,7 @@ export default function MembrosPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* Vendas */}
               <TrainingPath
-                nodes={salesNodes}
+                nodes={salesNodes as any[]}
                 onSelectNode={handleSelectNode}
                 highlighted={isUserAxis("vendas")}
                 axisName="Vendas"
@@ -330,7 +210,7 @@ export default function MembrosPage() {
 
               {/* Conexões */}
               <TrainingPath
-                nodes={connectionsNodes}
+                nodes={connectionsNodes as any[]}
                 onSelectNode={handleSelectNode}
                 highlighted={isUserAxis("conexoes")}
                 axisName="Conexões"
@@ -338,7 +218,7 @@ export default function MembrosPage() {
 
               {/* Experiência */}
               <TrainingPath
-                nodes={cxNodes}
+                nodes={cxNodes as any[]}
                 onSelectNode={handleSelectNode}
                 highlighted={isUserAxis("experiencia")}
                 axisName="Experiência do Consumidor"
