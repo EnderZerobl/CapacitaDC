@@ -6,11 +6,15 @@ import { useState, useCallback, useEffect } from "react"
 import { nodesApi } from "./api"
 import type { TrainingNode, NodeReleasePayload, NodeOrderPayload } from "./types"
 
-/** Converts a UTC ISO string to the local "YYYY-MM-DDTHH:mm" format */
+/** Converts a UTC ISO string (possibly naive, without 'Z') to local "YYYY-MM-DDTHH:mm" format */
 export function utcToLocalInput(utcIso: string): string {
-  const d = new Date(utcIso)
-  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-  return local.toISOString().slice(0, 16)
+  // Backend returns naive datetimes (no timezone indicator) that are actually UTC.
+  // Append 'Z' if missing so the browser interprets the string as UTC, not local.
+  const hasTimezone = utcIso.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(utcIso)
+  const d = new Date(hasTimezone ? utcIso : utcIso + 'Z')
+  // Use local Date getters — they automatically convert to the user's timezone
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 export function useNodes() {
@@ -46,6 +50,40 @@ export function useNodes() {
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  // Auto-refresh: poll when there are scheduled nodes with future released_at
+  useEffect(() => {
+    if (nodes.length === 0) return
+
+    // Find all nodes with a future scheduled release
+    const now = Date.now()
+    const scheduledNodes = nodes.filter((n) => {
+      if (!n.is_released || !n.released_at) return false
+      const hasTimezone = n.released_at.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(n.released_at)
+      const releaseMs = new Date(hasTimezone ? n.released_at : n.released_at + 'Z').getTime()
+      return releaseMs > now
+    })
+
+    if (scheduledNodes.length === 0) return
+
+    // Find the nearest upcoming release
+    const nextReleaseMs = Math.min(
+      ...scheduledNodes.map((n) => {
+        const hasTimezone = n.released_at!.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(n.released_at!)
+        return new Date(hasTimezone ? n.released_at! : n.released_at! + 'Z').getTime()
+      })
+    )
+
+    // Schedule refresh at that exact moment (+ small buffer), capped at 60s interval
+    const msUntilRelease = nextReleaseMs - Date.now()
+    const delay = Math.min(Math.max(msUntilRelease + 1000, 1000), 60_000)
+
+    const timer = setTimeout(() => {
+      refresh()
+    }, delay)
+
+    return () => clearTimeout(timer)
+  }, [nodes, refresh])
 
   const updateReleaseLocal = (
     nodeId: string,

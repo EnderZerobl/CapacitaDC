@@ -106,6 +106,31 @@ def delete_user(
     return {"message": "Usuário excluído com sucesso"}
 
 
+@router.put("/trainees/{trainee_id}", response_model=schemas.UserOut)
+def update_trainee(
+    trainee_id: str,
+    trainee_update: schemas.TraineeUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_member_or_above),
+):
+    trainee = db.query(models.User).filter(
+        models.User.id == trainee_id, models.User.type == "trainee"
+    ).first()
+    if not trainee:
+        raise HTTPException(status_code=404, detail="Trainee não encontrado")
+
+    if trainee_update.notaRotacao is not None:
+        trainee.nota_rotacao = trainee_update.notaRotacao
+    if trainee_update.rotacao is not None:
+        if trainee_update.rotacao not in [1, 2]:
+            raise HTTPException(status_code=400, detail="Rotação deve ser 1 ou 2")
+        trainee.rotacao = trainee_update.rotacao
+
+    db.commit()
+    db.refresh(trainee)
+    return trainee
+
+
 @router.put("/{user_id}", response_model=schemas.UserOut)
 def update_user(
     user_id: str,
@@ -154,31 +179,6 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user
-
-
-@router.put("/trainees/{trainee_id}", response_model=schemas.UserOut)
-def update_trainee(
-    trainee_id: str,
-    trainee_update: schemas.TraineeUpdate,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_member_or_above),
-):
-    trainee = db.query(models.User).filter(
-        models.User.id == trainee_id, models.User.type == "trainee"
-    ).first()
-    if not trainee:
-        raise HTTPException(status_code=404, detail="Trainee não encontrado")
-
-    if trainee_update.notaRotacao is not None:
-        trainee.nota_rotacao = trainee_update.notaRotacao
-    if trainee_update.rotacao is not None:
-        if trainee_update.rotacao not in [1, 2]:
-            raise HTTPException(status_code=400, detail="Rotação deve ser 1 ou 2")
-        trainee.rotacao = trainee_update.rotacao
-
-    db.commit()
-    db.refresh(trainee)
-    return trainee
 
 
 @router.get("/{user_id}/profile", response_model=schemas.UserProfileOut)

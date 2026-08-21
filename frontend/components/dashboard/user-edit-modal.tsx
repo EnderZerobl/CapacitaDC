@@ -50,7 +50,7 @@ interface UserEditModalProps {
     eixo?: string
     password?: string
     rotacao?: number
-  }) => void
+  }) => void | Promise<void>
   onDelete: () => void
 }
 
@@ -76,7 +76,7 @@ export function UserEditModal({
 
   const isOrg = currentUserRole === "organizador"
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const newErrors: Record<string, string> = {}
 
     if (!name.trim()) {
@@ -103,7 +103,7 @@ export function UserEditModal({
     }
 
     const rot = rotacao ? parseInt(rotacao) : undefined
-    onSave({
+    await onSave({
       name: name.trim(),
       email: email.trim(),
       cargo: cargo,

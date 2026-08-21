@@ -18,7 +18,7 @@ import {
   Users, FileQuestion, LogOut, User, Shield, Compass, Lock, Unlock,
   Calendar, BookOpen, Gamepad2, Clock, CheckCircle2, ClipboardList,
   Plus, ChevronDown, ChevronUp, Trash2, ExternalLink, Link2, Upload,
-  XCircle, Award, Calculator, Scale,
+  XCircle, Award, Calculator, Scale, Pencil,
 } from "lucide-react"
 
 import { useNodes, utcToLocalInput } from "@/features/nodes/hooks"
@@ -41,8 +41,14 @@ export default function Dashboard() {
 
   const {
     activities, activitySubmissions, expandedActivity,
-    createActivity, toggleActivity, deleteActivity, loadSubmissions, gradeSubmission,
+    createActivity, updateActivity, toggleActivity, deleteActivity, loadSubmissions, gradeSubmission,
   } = useActivities()
+
+  // Edit activity state
+  const [editActivityId, setEditActivityId] = useState<string | null>(null)
+  const [editActivityForm, setEditActivityForm] = useState({
+    title: "", description: "", eixo: "trainee", accepts_file: true, deadline: "", material_id: "", weight: 1,
+  })
 
   // Local UI state
   const [showActivityForm, setShowActivityForm] = useState(false)
@@ -172,6 +178,34 @@ export default function Dashboard() {
 
   const handleToggleActivity = async (activityId: string, currentOpen: boolean) => {
     try { await toggleActivity(activityId, currentOpen) } catch (e: any) { alert(e.message) }
+  }
+
+  const handleOpenEditActivity = (act: (typeof activities)[0]) => {
+    setEditActivityId(act.id)
+    setEditActivityForm({
+      title: act.title,
+      description: act.description || "",
+      eixo: act.eixo,
+      accepts_file: act.accepts_file,
+      deadline: act.deadline ? new Date(act.deadline).toISOString().slice(0, 16) : "",
+      material_id: act.material_id || "",
+      weight: act.weight ?? 1,
+    })
+  }
+
+  const handleSaveEditActivity = async () => {
+    if (!editActivityId) return
+    try {
+      await updateActivity(editActivityId, {
+        title: editActivityForm.title,
+        description: editActivityForm.description,
+        accepts_file: editActivityForm.accepts_file,
+        deadline: editActivityForm.deadline ? new Date(editActivityForm.deadline).toISOString() : null,
+        material_id: editActivityForm.material_id || null,
+        weight: Number(editActivityForm.weight) || 1,
+      })
+      setEditActivityId(null)
+    } catch (e: any) { alert(e.message || "Erro ao salvar atividade") }
   }
 
   const handleDeleteActivity = async (activityId: string) => {
@@ -479,9 +513,7 @@ export default function Dashboard() {
                                 <Upload className="h-2.5 w-2.5 mr-0.5" />Arquivo
                               </Badge>
                             )}
-                            <Badge variant="outline" className="text-amber-400 border-amber-500/30 text-[9px] flex items-center gap-0.5">
-                              <Scale className="h-2.5 w-2.5" />Peso {act.weight ?? 1}
-                            </Badge>
+
                           </CardTitle>
                           {act.description && (
                             <p className="text-xs text-muted-foreground mt-1">{act.description}</p>
@@ -494,6 +526,14 @@ export default function Dashboard() {
                           )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-7 px-2"
+                            onClick={() => handleOpenEditActivity(act)}
+                          >
+                            <Pencil className="h-3 w-3 mr-1" />Editar
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"
@@ -522,6 +562,75 @@ export default function Dashboard() {
                         </div>
                       </div>
                     </CardHeader>
+
+                    {/* Edit Activity Inline Form */}
+                    {editActivityId === act.id && (
+                      <CardContent className="pt-0">
+                        <div className="border-t border-primary/30 pt-4 space-y-3">
+                          <h4 className="text-xs font-bold text-primary">Editar Atividade</h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="space-y-1 sm:col-span-2">
+                              <label className="text-xs text-muted-foreground">Título *</label>
+                              <Input
+                                value={editActivityForm.title}
+                                onChange={e => setEditActivityForm(p => ({ ...p, title: e.target.value }))}
+                                className="bg-secondary border-border text-xs h-8"
+                              />
+                            </div>
+                            <div className="space-y-1 sm:col-span-2">
+                              <label className="text-xs text-muted-foreground">Descrição</label>
+                              <Input
+                                value={editActivityForm.description}
+                                onChange={e => setEditActivityForm(p => ({ ...p, description: e.target.value }))}
+                                className="bg-secondary border-border text-xs h-8"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs text-muted-foreground flex items-center gap-1"><Scale className="h-3 w-3" /> Peso</label>
+                              <Input
+                                type="number" min="0.1" step="0.5"
+                                value={editActivityForm.weight}
+                                onChange={e => setEditActivityForm(p => ({ ...p, weight: Number(e.target.value) }))}
+                                className="bg-secondary border-border text-xs h-8"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs text-muted-foreground">Material Relacionado</label>
+                              <select
+                                value={editActivityForm.material_id}
+                                onChange={e => setEditActivityForm(p => ({ ...p, material_id: e.target.value }))}
+                                className="w-full h-8 rounded-md border border-border bg-secondary px-3 text-xs text-foreground"
+                              >
+                                <option value="">Nenhum</option>
+                                {contents.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                              </select>
+                            </div>
+                            <div className="space-y-1 sm:col-span-2">
+                              <label className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Prazo</label>
+                              <Input
+                                type="datetime-local"
+                                value={editActivityForm.deadline}
+                                onChange={e => setEditActivityForm(p => ({ ...p, deadline: e.target.value }))}
+                                className="bg-secondary border-border text-xs h-8"
+                              />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={editActivityForm.accepts_file}
+                                onChange={e => setEditActivityForm(p => ({ ...p, accepts_file: e.target.checked }))}
+                                className="rounded"
+                              />
+                              <label className="text-xs text-muted-foreground cursor-pointer">Exige envio de arquivo (link)</label>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 justify-end pt-1">
+                            <Button variant="outline" size="sm" onClick={() => setEditActivityId(null)}>Cancelar</Button>
+                            <Button size="sm" onClick={handleSaveEditActivity} disabled={!editActivityForm.title}>Salvar</Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    )}
 
                     {isExpanded && (
                       <CardContent className="pt-0 space-y-3">
@@ -740,19 +849,14 @@ export default function Dashboard() {
                     Defina o peso de cada atividade. A média é calculada em tempo real:
                     <span className="font-mono ml-1">Σ(nota × peso) ÷ Σ(pesos)</span>
                   </p>
-                  {/* Pesos das atividades */}
+                  {/* Pesos das atividades (definidos na criação) */}
                   <div className="flex flex-wrap gap-3">
                     {traineeActivities.map(act => (
                       <div key={act.id} className="flex items-center gap-2 bg-secondary/50 border border-border rounded-lg px-3 py-2">
                         <span className="text-xs text-foreground max-w-[120px] truncate">{act.title}</span>
-                        <div className="flex items-center gap-1">
-                          <Scale className="h-3 w-3 text-muted-foreground" />
-                          <Input
-                            type="number" min="0" step="0.5"
-                            value={activityWeights[act.id] ?? act.weight ?? 1}
-                            onChange={e => setActivityWeights(p => ({ ...p, [act.id]: Number(e.target.value) }))}
-                            className="bg-background border-border text-xs h-7 w-16 text-center"
-                          />
+                        <div className="flex items-center gap-1 text-amber-400">
+                          <Scale className="h-3 w-3" />
+                          <span className="text-xs font-semibold">×{act.weight ?? 1}</span>
                         </div>
                       </div>
                     ))}
@@ -766,7 +870,7 @@ export default function Dashboard() {
                           {traineeActivities.map(act => (
                             <th key={act.id} className="text-center p-3 font-semibold text-muted-foreground max-w-[80px]">
                               <span className="truncate block" title={act.title}>{act.title.slice(0,12)}{act.title.length>12?"…":""}</span>
-                              <span className="text-[9px] text-primary">(×{activityWeights[act.id] ?? act.weight ?? 1})</span>
+                              <span className="text-[9px] text-primary">(×{act.weight ?? 1})</span>
                             </th>
                           ))}
                           <th className="text-center p-3 font-semibold text-primary">Média Pond.</th>
@@ -781,7 +885,7 @@ export default function Dashboard() {
                             const subs = activitySubmissions[act.id] || []
                             const sub = subs.find((s: any) => s.user_id === row.id)
                             if (sub && sub.grade != null) {
-                              const w = activityWeights[act.id] ?? act.weight ?? 1
+                              const w = act.weight ?? 1
                               sumGW += sub.grade * w
                               sumW += w
                             }
@@ -1021,7 +1125,7 @@ export default function Dashboard() {
                         const localState = nodeReleaseState[node.id] || {
                           isReleased: node.is_released,
                           scheduledDate: node.released_at
-                            ? new Date(node.released_at).toISOString().slice(0, 16)
+                            ? utcToLocalInput(node.released_at)
                             : ""
                         }
                         const { label, color, icon: StatusIcon } = getNodeStatus(node)
@@ -1110,17 +1214,41 @@ export default function Dashboard() {
                                     <Calendar className="h-3 w-3" />
                                     Data/hora de liberação (opcional)
                                   </Label>
-                                  <Input
-                                    type="datetime-local"
-                                    value={localState.scheduledDate}
-                                    onChange={(e) =>
-                                      setNodeReleaseState(prev => ({
-                                        ...prev,
-                                        [node.id]: { ...prev[node.id], scheduledDate: e.target.value }
-                                      }))
-                                    }
-                                    className="bg-secondary border-border text-xs h-8"
-                                  />
+                                  <div className="flex gap-1.5">
+                                    <Input
+                                      type="datetime-local"
+                                      value={localState.scheduledDate}
+                                      onChange={(e) =>
+                                        setNodeReleaseState(prev => ({
+                                          ...prev,
+                                          [node.id]: { ...prev[node.id], scheduledDate: e.target.value }
+                                        }))
+                                      }
+                                      className="bg-secondary border-border text-xs h-8 flex-1"
+                                    />
+                                    {localState.scheduledDate && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 px-2 text-rose-400 hover:text-rose-300 text-[10px] shrink-0"
+                                        onClick={() =>
+                                          setNodeReleaseState(prev => ({
+                                            ...prev,
+                                            [node.id]: { ...prev[node.id], scheduledDate: "" }
+                                          }))
+                                        }
+                                      >
+                                        Limpar
+                                      </Button>
+                                    )}
+                                  </div>
+                                  {node.released_at && (
+                                    <p className="text-[10px] text-amber-400/80 flex items-center gap-1">
+                                      <Clock className="h-3 w-3" />
+                                      Agendado: {new Date(node.released_at).toLocaleString("pt-BR")}
+                                    </p>
+                                  )}
                                   <p className="text-[10px] text-muted-foreground">
                                     Vazio = libera imediatamente ao salvar
                                   </p>

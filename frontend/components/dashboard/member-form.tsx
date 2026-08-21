@@ -34,7 +34,7 @@ interface MemberFormData {
 }
 
 interface MemberFormProps {
-  onSubmit: (data: MemberFormData) => void
+  onSubmit: (data: MemberFormData) => void | Promise<void>
   userType?: string
 }
 
@@ -47,6 +47,7 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
   const [eixo, setEixo] = useState<Eixo | "">("")
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [showPassword, setShowPassword] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   // Automatically select trainee for organizador
   useEffect(() => {
@@ -96,7 +97,7 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!validateForm()) return
@@ -109,9 +110,18 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
       ...(cargo === "membro" && eixo ? { eixo: eixo as Eixo } : {}),
     }
 
-    onSubmit(formData)
-    resetForm()
-    setOpen(false)
+    setSubmitting(true)
+    setErrors({})
+    try {
+      await onSubmit(formData)
+      resetForm()
+      setOpen(false)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Erro ao cadastrar usuário"
+      setErrors({ form: msg })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleOpenChange = (newOpen: boolean) => {
@@ -261,6 +271,13 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
             </div>
           )}
 
+          {/* Erro geral */}
+          {errors.form && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+              <p className="text-sm text-destructive">{errors.form}</p>
+            </div>
+          )}
+
           {/* Botões */}
           <div className="flex justify-end gap-3 pt-4">
             <Button
@@ -268,11 +285,12 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
               variant="outline"
               onClick={() => handleOpenChange(false)}
               className="border-border text-muted-foreground hover:text-foreground"
+              disabled={submitting}
             >
               Cancelar
             </Button>
-            <Button type="submit">
-              Cadastrar
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Cadastrando..." : "Cadastrar"}
             </Button>
           </div>
         </form>

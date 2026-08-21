@@ -90,12 +90,12 @@ function TraineeGroup({
                     rotacao: trainee.rotacao,
                   }}
                   currentUserRole={currentUserRole}
-                  onSave={(data) => {
-                    // Save general user data
-                    onUpdateUser(trainee.id, data)
-                    // If rotacao was changed, also update via trainee endpoint
+                  onSave={async (data) => {
+                    // Save general user data first
+                    await onUpdateUser(trainee.id, data)
+                    // Then update rotacao via trainee endpoint if changed
                     if (data.rotacao !== undefined && onUpdateTrainee) {
-                      onUpdateTrainee(trainee.id, { rotacao: data.rotacao })
+                      await onUpdateTrainee(trainee.id, { rotacao: data.rotacao })
                     }
                   }}
                   onDelete={() => onDeleteUser(trainee.id)}
