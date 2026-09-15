@@ -34,6 +34,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def no_store(request, call_next):
+    """Every response here is dynamic and often per-user: an intermediary
+    (the Next.js rewrite proxy, Vercel's edge cache) must never reuse one for
+    a later request, e.g. replaying a stale 304 for a login POST."""
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
 # ── Routers ───────────────────────────────────────────────────────────────────
 # Uploaded files are served through app.api.grades (GET /api/uploads/{pathname})
 # and app.api.activities, both backed by private Vercel Blob storage — compute
