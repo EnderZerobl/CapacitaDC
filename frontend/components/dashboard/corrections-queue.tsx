@@ -16,7 +16,7 @@ interface CorrectionsQueueProps {
 }
 
 export function CorrectionsQueue({ activities, isOrganizer, onGraded }: CorrectionsQueueProps) {
-  const { items, filters, setFilters, setPage, pageSize, hasMore, loading, error, refresh, grade } = useSubmissionQueue()
+  const { items, filters, setFilters, setPage, pageSize, hasMore, loading, error, refresh, grade, remove } = useSubmissionQueue()
   const axes = isOrganizer
     ? [{ value: "trainee", label: "Trainee" }]
     : [{ value: "trainee", label: "Trainee" }, { value: "vendas", label: "Vendas" },
@@ -70,6 +70,10 @@ export function CorrectionsQueue({ activities, isOrganizer, onGraded }: Correcti
           <CorrectionRow key={submission.id} submission={submission} showContext
             onGrade={async (value, feedback) => {
               await grade(submission.activity_id, submission.id, value, feedback)
+              onGraded?.()
+            }}
+            onDelete={async () => {
+              await remove(submission.activity_id, submission.id)
               onGraded?.()
             }} />
         ))}

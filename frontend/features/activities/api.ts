@@ -1,8 +1,9 @@
 // features/activities/api.ts — All HTTP calls related to activities
 
-import { apiClient } from "@/lib/api-client"
+import { apiClient, responseError } from "@/lib/api-client"
 import type {
   Activity,
+  SubmissionAttachment,
   ActivityCreatePayload,
   ActivityUpdatePayload,
   SubmissionCreatePayload,
@@ -12,6 +13,16 @@ import type {
 } from "./types"
 
 export const activitiesApi = {
+  uploadAttachment: async (activityId: string, file: File, nodeId?: string): Promise<SubmissionAttachment> => {
+    const data = new FormData()
+    data.append("file", file)
+    if (nodeId) data.append("node_id", nodeId)
+    const response = await fetch(`/api/activities/${activityId}/attachments`, {
+      method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }, body: data,
+    })
+    if (!response.ok) throw await responseError(response)
+    return response.json()
+  },
   list: () => apiClient.get<Activity[]>("/api/activities"),
 
   create: (payload: ActivityCreatePayload) =>
@@ -53,4 +64,7 @@ export const activitiesApi = {
       `/api/activities/${activityId}/submissions/${submissionId}`,
       payload
     ),
+
+  deleteSubmission: (activityId: string, submissionId: string) =>
+    apiClient.delete(`/api/activities/${activityId}/submissions/${submissionId}`),
 }

@@ -238,6 +238,45 @@ class GradingTests(unittest.TestCase):
             self.assertEqual(db.query(models.ActivitySubmission).count(), 0)
             self.assertEqual(db.query(models.UserNodeProgress).count(), 0)
 
+    def test_deleting_a_submission_removes_its_grade_and_reopens_the_trail_step(self):
+        activity = self.activity()
+        submission = self.deliver(activity)
+        self.grade(activity, submission, 8)
+        self.assertEqual(self.grade_of('trainee'), 8.0)
+        with self.api.sessions() as db:
+            node = db.query(models.TrainingNode).filter_by(activity_id=activity['id']).one()
+            self.assertTrue(db.query(models.UserNodeProgress).filter_by(
+                user_id='trainee', node_id=node.id, completed=True).first())
+
+        status, body = self.request('DELETE', f"/api/activities/{activity['id']}/submissions/{submission['id']}")
+        self.assertEqual(status, 200, body)
+        self.assertIsNone(self.grade_of('trainee'))
+        with self.api.sessions() as db:
+            self.assertIsNone(db.get(models.ActivitySubmission, submission['id']))
+            self.assertIsNone(db.query(models.UserNodeProgress).filter_by(
+                user_id='trainee', node_id=node.id).first())
+
+        _, activities_after = self.request('GET', '/api/activities', role='trainee')
+        self.assertIsNone(next(a for a in activities_after if a['id'] == activity['id'])['my_submission'])
+
+    def test_organizer_can_delete_a_trainee_submission_but_not_a_membro_submission(self):
+        trainee_activity = self.activity()
+        trainee_submission = self.deliver(trainee_activity)
+        membro_activity = self.activity(eixo='vendas')
+        membro_submission = self.deliver(membro_activity, role='membro')
+
+        status, body = self.request(
+            'DELETE', f"/api/activities/{membro_activity['id']}/submissions/{membro_submission['id']}",
+            role='organizador')
+        self.assertEqual(status, 403, body)
+
+        status, body = self.request(
+            'DELETE', f"/api/activities/{trainee_activity['id']}/submissions/{trainee_submission['id']}",
+            role='organizador')
+        self.assertEqual(status, 200, body)
+        with self.api.sessions() as db:
+            self.assertIsNone(db.get(models.ActivitySubmission, trainee_submission['id']))
+
     def test_organizer_cannot_correct_former_trainees_now_members(self):
         activity = self.activity()
         submission = self.deliver(activity)

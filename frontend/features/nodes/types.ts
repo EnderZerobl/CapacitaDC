@@ -1,5 +1,14 @@
 // features/nodes/types.ts — Shared Node type definitions
 
+import type { Activity } from "@/features/activities/types"
+import type { Material } from "@/features/materials/types"
+
+export interface NodeContent {
+  node: TrainingNode
+  activity: Activity | null
+  material: Material | null
+}
+
 export interface TrainingNode {
   id: string
   name: string

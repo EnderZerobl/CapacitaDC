@@ -231,6 +231,8 @@ def get_user_profile(
             activity_id=sub.activity_id,
             user_id=sub.user_id,
             file_url=sub.file_url,
+            links=sub.links or [],
+            attachments=sub.attachments,
             comment=sub.comment,
             submitted_at=sub.submitted_at,
             grade=sub.grade,

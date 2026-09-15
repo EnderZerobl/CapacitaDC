@@ -5,7 +5,9 @@ api/activities.py — Activity & submission endpoints (/api/activities/*)
 import uuid
 from typing import List
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
+from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -25,6 +27,78 @@ from app.services.access import (
 )
 
 router = APIRouter()
+
+SUBMISSION_UPLOAD_DIR = Path(__file__).resolve().parents[2] / "submission_uploads"
+MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024
+ATTACHMENT_EXTENSIONS = {"pdf", "doc", "docx", "odt", "xls", "xlsx", "ods", "ppt", "pptx", "odp", "png", "jpg", "jpeg", "gif", "webp", "zip", "txt", "csv"}
+
+
+def _submission_activity(db, activity_id, user, node_id=None):
+    if user.type not in {"membro", "trainee"}:
+        raise HTTPException(403, "Somente participantes podem enviar anexos.")
+    activity = db.get(models.Activity, activity_id)
+    if activity is None:
+        raise HTTPException(404, "Atividade não encontrada")
+    ensure_activity_access(user, activity)
+    if not is_effectively_open(activity):
+        raise HTTPException(400, "Esta atividade está fechada e não aceita mais envios")
+    _submission_nodes(db, activity, user, node_id)
+    return activity
+
+
+@router.post("/{activity_id}/attachments", response_model=schemas.SubmissionAttachmentOut)
+async def upload_submission_attachment(
+    activity_id: str, file: UploadFile = File(...), node_id: str | None = Form(None),
+    db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user),
+):
+    _submission_activity(db, activity_id, current_user, node_id)
+    name = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    extension = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if extension not in ATTACHMENT_EXTENSIONS or len(name) > 200:
+        raise HTTPException(400, "Formato não permitido. Envie PDF, documentos, planilhas, apresentações, imagens, TXT, CSV ou ZIP.")
+    data = await file.read(MAX_ATTACHMENT_SIZE + 1)
+    if len(data) > MAX_ATTACHMENT_SIZE:
+        raise HTTPException(413, "O arquivo excede o limite de 20 MB.")
+    if not data:
+        raise HTTPException(400, "O arquivo está vazio.")
+    attachment = models.SubmissionAttachment(id=str(uuid.uuid4()), activity_id=activity_id,
+        user_id=current_user.id, name=name, size=len(data), storage_key=f"{uuid.uuid4().hex}.{extension}")
+    SUBMISSION_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    destination = SUBMISSION_UPLOAD_DIR / attachment.storage_key
+    try:
+        destination.write_bytes(data)
+        db.add(attachment)
+        db.commit()
+        db.refresh(attachment)
+    except Exception:
+        db.rollback()
+        destination.unlink(missing_ok=True)
+        raise
+    return attachment
+
+
+@router.get("/{activity_id}/attachments/{attachment_id}")
+def download_submission_attachment(
+    activity_id: str, attachment_id: str,
+    db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user),
+):
+    attachment = db.get(models.SubmissionAttachment, attachment_id)
+    if attachment is None or attachment.activity_id != activity_id:
+        raise HTTPException(404, "Anexo não encontrado")
+    activity = db.get(models.Activity, activity_id)
+    if current_user.id != attachment.user_id:
+        if current_user.type not in {"admin", "organizador"} or not attachment.submission_id:
+            raise HTTPException(403, "Você não tem acesso a este anexo.")
+        ensure_activity_access(current_user, activity, manage=True)
+        owner = db.get(models.User, attachment.user_id)
+        if current_user.type == "organizador" and owner.type != "trainee":
+            raise HTTPException(403, "Você não tem acesso a este anexo.")
+    path = SUBMISSION_UPLOAD_DIR / attachment.storage_key
+    if not path.is_file():
+        raise HTTPException(404, "Arquivo não encontrado")
+    return FileResponse(path, filename=attachment.name, media_type="application/octet-stream",
+                        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"})
+
 
 
 def _validate_material_link(db: Session, user: models.User, material_id: str | None) -> None:
@@ -289,12 +363,17 @@ def submit_activity(
         )
     file_url = (submission_in.file_url or "").strip() or None
     comment = (submission_in.comment or "").strip()
-    if activity.accepts_file and not file_url:
+    attachment_ids = submission_in.attachment_ids
+    attachments = db.query(models.SubmissionAttachment).filter(models.SubmissionAttachment.id.in_(attachment_ids)).all() if attachment_ids else []
+    if len(attachments) != len(attachment_ids) or any(a.user_id != current_user.id or a.activity_id != activity_id for a in attachments):
+        raise HTTPException(400, "Um dos anexos não pertence a este envio.")
+    links = submission_in.links
+    if activity.accepts_file and not attachments:
         raise HTTPException(
-            status_code=400, detail="Esta atividade exige o envio de um arquivo (URL)"
+            status_code=400, detail="Esta atividade exige pelo menos um anexo."
         )
-    if not file_url and not comment:
-        raise HTTPException(status_code=400, detail="Inclua um arquivo ou comentário para entregar a atividade.")
+    if not attachments and not links and not file_url and not comment:
+        raise HTTPException(status_code=400, detail="Inclua um anexo, link ou comentário para entregar a atividade.")
 
     nodes = _submission_nodes(db, activity, current_user, getattr(submission_in, "node_id", None))
 
@@ -313,9 +392,12 @@ def submit_activity(
             id=str(uuid.uuid4()), activity_id=activity_id, user_id=current_user.id,
         )
         db.add(existing)
-    elif existing.file_url != file_url or existing.comment != comment:
+    elif (existing.file_url != file_url or existing.comment != comment or (existing.links or []) != links
+          or {a.id for a in existing.attachments} != set(attachment_ids)):
         existing.grade = None
         existing.feedback = ""
+    existing.attachments = attachments
+    existing.links = links
     existing.file_url = file_url
     existing.comment = comment
     existing.submitted_at = datetime.now(timezone.utc)
@@ -325,6 +407,53 @@ def submit_activity(
     db.refresh(existing)
 
     return submission_to_out(existing, user=current_user, activity=activity)
+
+
+@router.delete("/{activity_id}/submissions/{submission_id}")
+def delete_submission(
+    activity_id: str,
+    submission_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_organizador_or_admin),
+):
+    """Remove one delivery so the queue can be cleaned up (tests, duplicates, mistakes).
+
+    The linked trail step goes back to not completed: with the delivery gone, a
+    completed step would be a dead end the person could never resubmit into.
+    """
+    activity = db.query(models.Activity).filter(models.Activity.id == activity_id).first()
+    if not activity:
+        raise HTTPException(status_code=404, detail="Atividade não encontrada")
+    ensure_activity_access(current_user, activity, manage=True)
+    submission = db.query(models.ActivitySubmission).filter(
+        models.ActivitySubmission.id == submission_id,
+        models.ActivitySubmission.activity_id == activity_id,
+    ).first()
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submissão não encontrada")
+    if current_user.type == "organizador" and (not submission.user or submission.user.type != "trainee"):
+        raise HTTPException(status_code=403, detail="Organizadores só podem excluir entregas de trainees.")
+
+    user_id = submission.user_id
+    for attachment in list(submission.attachments):
+        (SUBMISSION_UPLOAD_DIR / attachment.storage_key).unlink(missing_ok=True)
+        db.delete(attachment)
+
+    node_ids = [row[0] for row in db.query(models.TrainingNode.id).filter(
+        models.TrainingNode.type == "activity",
+        models.TrainingNode.activity_id == activity_id,
+    ).all()]
+    if node_ids:
+        db.query(models.UserNodeProgress).filter(
+            models.UserNodeProgress.user_id == user_id,
+            models.UserNodeProgress.node_id.in_(node_ids),
+        ).delete(synchronize_session=False)
+
+    db.delete(submission)
+    db.commit()
+    recompute_user_grade(db, user_id)
+    db.commit()
+    return {"detail": "Envio excluído com sucesso"}
 
 
 @router.patch(

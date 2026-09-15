@@ -145,6 +145,10 @@ class TrainingNodeGraphOut(TrainingNodeOut):
     unlocked: bool = True
     user_score: int = 0
 
+class NodeActivityUpdate(BaseModel):
+    activity_id: str = Field(min_length=1)
+
+
 class NodeReleaseUpdate(BaseModel):
     is_released: bool
     released_at: Optional[datetime] = None  # None = liberar imediatamente
@@ -240,11 +244,21 @@ class ActivityUpdate(BaseModel):
     material_id: Optional[str] = None
     weight: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
 
+class SubmissionAttachmentOut(BaseModel):
+    id: str
+    name: str
+    size: int
+    url: str
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ActivitySubmissionOut(BaseModel):
     id: str
     activity_id: str
     user_id: str
     file_url: Optional[str] = None
+    links: List[str] = Field(default_factory=list, max_length=10)
+    attachments: List[SubmissionAttachmentOut] = Field(default_factory=list)
     comment: Optional[str] = ""
     submitted_at: Optional[datetime] = None
     grade: Optional[float] = None
@@ -276,10 +290,32 @@ class ActivityOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class NodeContentOut(BaseModel):
+    node: TrainingNodeGraphOut
+    activity: Optional[ActivityOut] = None
+    material: Optional[MaterialOut] = None
+
+
 class SubmissionCreate(BaseModel):
     node_id: Optional[str] = None
-    file_url: Optional[str] = None
-    comment: Optional[str] = ""
+    file_url: Optional[str] = None  # Older clients may still send a link here.
+    attachment_ids: List[str] = Field(default_factory=list, max_length=5)
+    links: List[str] = Field(default_factory=list, max_length=10)
+    comment: Optional[str] = Field(default="", max_length=5000)
+
+    @model_validator(mode="after")
+    def validate_links(self):
+        from urllib.parse import urlsplit
+        self.links = [link.strip() for link in self.links if link.strip()]
+        if self.file_url:
+            self.file_url = self.file_url.strip() or None
+        for link in self.links + ([self.file_url] if self.file_url else []):
+            parsed = urlsplit(link)
+            if len(link) > 2048 or parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError("Informe links válidos começando com http:// ou https://")
+        if len(self.attachment_ids) != len(set(self.attachment_ids)):
+            raise ValueError("Um anexo não pode ser enviado duas vezes")
+        return self
 
 class SubmissionGrade(BaseModel):
     grade: float = Field(ge=0, le=10)

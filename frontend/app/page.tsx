@@ -32,6 +32,7 @@ import { useNodes, utcToLocalInput } from "@/features/nodes/hooks"
 import { useActivities } from "@/features/activities/hooks"
 import { useUsers } from "@/features/users/hooks"
 import { useMaterials } from "@/features/materials/hooks"
+import { NodeActivityLink } from "@/components/dashboard/node-activity-link"
 import type { TrainingNode } from "@/features/nodes/types"
 
 export default function Dashboard() {
@@ -48,7 +49,7 @@ export default function Dashboard() {
 
   const {
     activities, activitySubmissions, expandedActivity,
-    createActivity, updateActivity, toggleActivity, deleteActivity, loadSubmissions, gradeSubmission,
+    createActivity, updateActivity, toggleActivity, deleteActivity, loadSubmissions, gradeSubmission, deleteSubmission,
   } = useActivities()
 
   // Edit activity state
@@ -73,7 +74,7 @@ export default function Dashboard() {
     gamesApi.list().then(setGames).catch(error => setNodeError(error.message))
   }, [showNodeForm, user?.id])
   const [nodeForm, setNodeForm] = useState({
-    name: "", type: "activity" as "activity" | "material" | "game", eixo: "trainee",
+    name: "", type: "activity" as "activity" | "game", eixo: "trainee",
     activity_id: "", reference_id: "", deadline: "", is_released: false,
     questions: [] as Array<{ text: string; explanation: string; options: Array<{ text: string; is_correct: boolean; score: number; feedback: string }> }>,
   })
@@ -141,7 +142,7 @@ export default function Dashboard() {
     const payload: any = {
       name: nodeForm.name.trim() || null, type: nodeForm.type, eixo: nodeForm.eixo,
       activity_id: nodeForm.type === "activity" ? (nodeForm.activity_id || null) : null,
-      reference_id: nodeForm.type === "material" ? (nodeForm.reference_id || null) : null,
+      reference_id: null,
       deadline: deadlineIso, is_released: nodeForm.is_released,
       game_revision_id: nodeForm.type === "game" ? gameRevisionId : null,
       prerequisite_node_id: prerequisiteId || null,
@@ -418,8 +419,9 @@ export default function Dashboard() {
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">Material Relacionado (Opcional)</label>
+                      <label htmlFor="activity-material" className="text-xs text-muted-foreground">Material da atividade (opcional)</label>
                       <select
+                        id="activity-material"
                         value={newActivityForm.material_id}
                         onChange={e => setNewActivityForm(p => ({ ...p, material_id: e.target.value }))}
                         className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-xs text-foreground"
@@ -460,7 +462,7 @@ export default function Dashboard() {
                         className="rounded"
                       />
                       <label htmlFor="accepts_file_check" className="text-xs text-muted-foreground cursor-pointer">
-                        Exige envio de arquivo (link)
+                        Exige pelo menos um anexo
                       </label>
                     </div>
                   </div>
@@ -613,7 +615,7 @@ export default function Dashboard() {
                                 onChange={e => setEditActivityForm(p => ({ ...p, accepts_file: e.target.checked }))}
                                 className="rounded"
                               />
-                              <label className="text-xs text-muted-foreground cursor-pointer">Exige envio de arquivo (link)</label>
+                              <label className="text-xs text-muted-foreground cursor-pointer">Exige pelo menos um anexo</label>
                             </div>
                           </div>
                           <div className="flex gap-2 justify-end pt-1">
@@ -635,6 +637,10 @@ export default function Dashboard() {
                                 <CorrectionRow key={sub.id} submission={sub}
                                   onGrade={async (grade, feedback) => {
                                     await gradeSubmission(act.id, sub.id, grade, feedback)
+                                    await refreshUsers()
+                                  }}
+                                  onDelete={async () => {
+                                    await deleteSubmission(act.id, sub.id)
                                     await refreshUsers()
                                   }} />
                               ))}
@@ -806,7 +812,7 @@ export default function Dashboard() {
             <div className="flex items-start justify-between">
               <div className="space-y-1">
                 <h2 className="text-2xl font-bold text-foreground">Gerenciamento da Trilha</h2>
-                <p className="text-muted-foreground text-sm">Crie, libere ou bloqueie nós da trilha de capacitação.</p>
+                <p className="text-muted-foreground text-sm">Crie o material na biblioteca, vincule-o a uma atividade e selecione a atividade no nó.</p>
               </div>
               <Button variant="outline" size="sm" asChild>
                 <Link href="/jogos"><Gamepad2 className="h-4 w-4 mr-2" />Biblioteca de jogos</Link>
@@ -822,12 +828,11 @@ export default function Dashboard() {
                   <h3 className="text-sm font-bold text-foreground">Novo Nó de Trilha</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">Tipo de Nó</label>
-                      <select value={nodeForm.type}
+                      <label htmlFor="node-type" className="text-xs text-muted-foreground">Tipo de Nó</label>
+                      <select id="node-type" value={nodeForm.type}
                         onChange={e => setNodeForm(p => ({ ...p, type: e.target.value as any, questions: [] }))}
                         className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-xs text-foreground">
                         <option value="activity">Atividade</option>
-                        <option value="material">Material (Somente Leitura)</option>
                         <option value="game">Jogo da biblioteca</option>
                       </select>
                     </div>
@@ -853,8 +858,8 @@ export default function Dashboard() {
 
                     {nodeForm.type === "activity" && (
                       <div className="space-y-1 sm:col-span-2">
-                        <label className="text-xs text-muted-foreground font-medium">Atividade Associada *</label>
-                        <select value={nodeForm.activity_id}
+                        <label htmlFor="node-activity" className="text-xs text-muted-foreground font-medium">Atividade Associada *</label>
+                        <select id="node-activity" value={nodeForm.activity_id}
                           onChange={e => {
                             const actId = e.target.value
                             const act = activities.find(a => a.id === actId)
@@ -869,26 +874,8 @@ export default function Dashboard() {
                           {activities
                             .filter(a => nodeForm.eixo === "all" || a.eixo === "all" || a.eixo === nodeForm.eixo)
                             .map(a => (
-                              <option key={a.id} value={a.id}>{a.title} (Peso {a.weight ?? 1})</option>
+                              <option key={a.id} value={a.id}>{a.title} — {contents.find(c => c.id === a.material_id)?.name || "Sem material"}</option>
                             ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {nodeForm.type === "material" && (
-                      <div className="space-y-1 sm:col-span-2">
-                        <label className="text-xs text-muted-foreground">Material da Biblioteca</label>
-                        <select value={nodeForm.reference_id}
-                          onChange={e => {
-                            const matId = e.target.value
-                            const mat = contents.find(c => c.id === matId)
-                            setNodeForm(p => ({ ...p, reference_id: matId, name: p.name || (mat ? mat.name : "") }))
-                          }}
-                          className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-xs text-foreground">
-                          <option value="">Selecione um material...</option>
-                          {contents.filter(c => c.eixo === nodeForm.eixo).map(c => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                          ))}
                         </select>
                       </div>
                     )}
@@ -945,7 +932,7 @@ export default function Dashboard() {
                     <Button variant="outline" size="sm" disabled={creatingNode} onClick={() => setShowNodeForm(false)}>Cancelar</Button>
                     <Button size="sm" onClick={handleCreateNode} disabled={creatingNode || (
                       nodeForm.type === "activity" ? !nodeForm.activity_id
-                        : nodeForm.type === "material" ? !nodeForm.reference_id : !gameRevisionId
+                        : !gameRevisionId
                     )}>{creatingNode ? "Criando..." : "Criar Nó"}</Button>
                   </div>
                 </CardContent>
@@ -1030,6 +1017,9 @@ export default function Dashboard() {
                               </div>
                             </CardHeader>
                             <CardContent className="space-y-4">
+                              {node.type !== "game" && <NodeActivityLink
+                                key={`${node.id}-${node.activity_id || "none"}`}
+                                node={node} activities={activities} materials={materials} onSaved={refreshNodes} />}
                               {/* Toggle liberação */}
                               <div className="flex items-center justify-between">
                                 <Label htmlFor={`release-${node.id}`} className="text-sm text-muted-foreground flex items-center gap-2 cursor-pointer">

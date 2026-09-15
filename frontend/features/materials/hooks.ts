@@ -16,6 +16,7 @@ export function useMaterials() {
       setLoading(true)
       const data = await materialsApi.list()
       setMaterials(data)
+      setError(null)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao carregar materiais")
     } finally {

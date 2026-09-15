@@ -1,6 +1,15 @@
 // features/activities/types.ts — Shared Activity type definitions
 
+export interface SubmissionAttachment {
+  id: string
+  name: string
+  size: number
+  url: string
+}
+
 export interface ActivitySubmission {
+  attachments?: SubmissionAttachment[]
+  links?: string[]
   id: string
   file_url?: string | null
   comment?: string
@@ -47,6 +56,8 @@ export interface ActivityUpdatePayload {
 }
 
 export interface SubmissionCreatePayload {
+  attachment_ids?: string[]
+  links?: string[]
   file_url?: string | null
   comment?: string
   node_id?: string | null
@@ -58,6 +69,8 @@ export interface SubmissionGradePayload {
 }
 
 export interface ActivitySubmissionOut {
+  attachments?: SubmissionAttachment[]
+  links?: string[]
   id: string
   activity_id: string
   user_id: string

@@ -49,7 +49,7 @@ Só precisa do frontend; as respostas da API são simuladas:
 BASE_URL=http://127.0.0.1:3017 node frontend/tests/stabilization.cjs
 ```
 
-Verifica sessão expirada, indisponibilidade temporária, preservação de formulários após falha, reenvio de atividades e recuperação de senha indisponível.
+Verifica sessão expirada, indisponibilidade temporária, preservação de formulários após falha, reenvio de atividades, autoria e vínculo material → atividade → nó, leitura de texto e recursos pelo nó, abertura de conteúdo após desbloquear etapas, atualização ao abrir nós, recuperação de falhas de carregamento, conteúdo ausente e recuperação de senha indisponível.
 
 ## Fila de correções e notas
 
@@ -74,6 +74,16 @@ BASE_URL=http://127.0.0.1:3017 ADMIN_EMAIL=admin@example.com \
 ```
 
 Percorre autoria, pré-visualização, publicação, vínculo com a trilha, liberação, jogo e atualização do progresso.
+
+## Entregas com anexos
+
+Com uma API descartável nova e o frontend conectado a ela:
+
+```bash
+BASE_URL=http://127.0.0.1:3017 node frontend/tests/submission_attachments_journey.cjs
+```
+
+Verifica PDF e CSV via multipart, limites de quantidade/tamanho/formato, campos de links e comentários, preservação após falha, conclusão da etapa, reenvio que invalida a nota, download autenticado e exibição na correção. A suíte `test_submission_attachments.py` cobre também propriedade dos anexos, atividade bloqueada/fechada e migração de entregas antigas.
 
 ## Upload e proxy
 

@@ -11,6 +11,9 @@ import {
   ClipboardList, Link2, Award, Clock, Loader2
 } from "lucide-react"
 
+import { SubmissionContent } from "@/components/activities/submission-content"
+import type { SubmissionAttachment } from "@/features/activities/types"
+
 interface NodeProgress {
   node_id: string
   node_name: string
@@ -21,6 +24,8 @@ interface NodeProgress {
 }
 
 interface ActivitySubmission {
+  attachments?: SubmissionAttachment[]
+  links?: string[]
   id: string
   activity_id: string
   user_id: string
@@ -269,13 +274,7 @@ export default function PerfilPage() {
                         )}
                       </div>
                     </div>
-                    {sub.file_url && (
-                      <a href={sub.file_url} target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-primary flex items-center gap-1 hover:underline truncate">
-                        <Link2 className="h-3 w-3 shrink-0" />{sub.file_url}
-                      </a>
-                    )}
-                    {sub.comment && <p className="text-xs text-muted-foreground italic">{sub.comment}</p>}
+                    <SubmissionContent submission={sub} />
                     {sub.feedback && (
                       <div className="rounded-lg bg-primary/5 border border-primary/10 p-2">
                         <p className="text-[10px] font-semibold text-primary mb-0.5">Feedback:</p>

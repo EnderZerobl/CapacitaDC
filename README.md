@@ -84,7 +84,7 @@ npm run build
 npm run start
 ```
 
-Para hospedar o frontend, configure o diretório raiz como `frontend`, use o preset Next.js e informe `API_BACKEND_URL` apontando para a API acessível pelo servidor da hospedagem. A API Python e o PostgreSQL precisam de execução própria. Os uploads ficam em `backend/uploads/` e exigem armazenamento persistente no host da API.
+Para hospedar o frontend, configure o diretório raiz como `frontend`, use o preset Next.js e informe `API_BACKEND_URL` apontando para a API acessível pelo servidor da hospedagem. A API Python e o PostgreSQL precisam de execução própria. Os materiais públicos ficam em `backend/uploads/` e os anexos privados de entregas em `backend/submission_uploads/`. Ambas as pastas exigem armazenamento persistente no host da API.
 
 Antes de atualizar um banco existente, faça backup e confira as migrações descritas na documentação. O seed de desenvolvimento não deve ser executado automaticamente em produção.
 

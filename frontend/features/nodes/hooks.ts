@@ -2,9 +2,9 @@
 
 // features/nodes/hooks.ts — Custom hooks for training node state management
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { nodesApi } from "./api"
-import type { TrainingNode, NodeReleasePayload, GameAnswer } from "./types"
+import type { TrainingNode, NodeContent, NodeReleasePayload, GameAnswer } from "./types"
 
 /** Converts a UTC ISO string (possibly naive, without 'Z') to local "YYYY-MM-DDTHH:mm" format */
 export function utcToLocalInput(utcIso: string): string {
@@ -173,4 +173,36 @@ export function useNodes() {
     completeNode,
     submitGame,
   }
+}
+
+/** Load the selected step and its activity/material together, independently of the library. */
+export function useNodeContent(nodeId: string | null) {
+  const [content, setContent] = useState<NodeContent | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const version = useRef(0)
+
+  const refresh = useCallback(async () => {
+    const request = ++version.current
+    setContent(null)
+    setError(null)
+    if (!nodeId) { setLoading(false); return }
+    setLoading(true)
+    try {
+      const result = await nodesApi.content(nodeId)
+      if (request === version.current) setContent(result)
+    } catch (cause) {
+      if (request === version.current) setError(cause instanceof Error ? cause.message : "Não foi possível carregar esta etapa.")
+    } finally {
+      if (request === version.current) setLoading(false)
+    }
+  }, [nodeId])
+
+  useEffect(() => {
+    void refresh()
+    return () => { version.current++ }
+  }, [refresh])
+
+  // Do not display the previous step during the render before the effect runs.
+  return { content: content?.node.id === nodeId ? content : null, loading, error, refresh }
 }

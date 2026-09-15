@@ -13,6 +13,8 @@ const nextConfig = {
   allowedDevOrigins: ['127.0.0.1'],
   // Não gerar AGENTS.md e CLAUDE.md dentro do repositório a cada build.
   agentRules: false,
+  // Allow a 20 MB attachment plus multipart headers through the API proxy.
+  experimental: { proxyClientMaxBodySize: '25mb' },
   images: {
     unoptimized: true,
   },

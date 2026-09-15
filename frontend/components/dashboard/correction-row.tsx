@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { Link2 } from "lucide-react"
+import { Trash2 } from "lucide-react"
+import { SubmissionContent } from "@/components/activities/submission-content"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,12 +13,15 @@ interface CorrectionRowProps {
   /** Mostra atividade e pessoa; desnecessário dentro da própria atividade. */
   showContext?: boolean
   onGrade: (grade: number, feedback: string) => Promise<unknown>
+  /** Ausente esconde o botão de excluir — nem toda tela deve permitir apagar envios. */
+  onDelete?: () => Promise<unknown>
 }
 
-export function CorrectionRow({ submission, showContext = false, onGrade }: CorrectionRowProps) {
+export function CorrectionRow({ submission, showContext = false, onGrade, onDelete }: CorrectionRowProps) {
   const [grade, setGrade] = useState(submission.grade?.toString() ?? "")
   const [feedback, setFeedback] = useState(submission.feedback ?? "")
   const [busy, setBusy] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState("")
 
   const save = async () => {
@@ -37,14 +41,36 @@ export function CorrectionRow({ submission, showContext = false, onGrade }: Corr
     }
   }
 
+  const remove = async () => {
+    if (!onDelete) return
+    if (!confirm(`Excluir o envio de ${submission.user_name || "esta pessoa"}? A etapa da trilha volta a ficar pendente.`)) return
+    setDeleting(true)
+    setError("")
+    try {
+      await onDelete()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível excluir o envio.")
+      setDeleting(false)
+    }
+  }
+
   return <div className="space-y-2 rounded-lg border border-border p-3">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <span className="text-xs font-semibold text-foreground">{submission.user_name}</span>
-      {submission.submitted_at && (
-        <span className="text-[10px] text-muted-foreground">
-          {new Date(submission.submitted_at).toLocaleString("pt-BR")}
-        </span>
-      )}
+      <div className="flex items-center gap-2">
+        {submission.submitted_at && (
+          <span className="text-[10px] text-muted-foreground">
+            {new Date(submission.submitted_at).toLocaleString("pt-BR")}
+          </span>
+        )}
+        {onDelete && (
+          <Button size="sm" variant="ghost" disabled={deleting}
+            className="h-6 w-6 p-0 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+            onClick={() => void remove()} aria-label="Excluir envio">
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
     </div>
     {showContext && (
       <div className="flex flex-wrap items-center gap-2">
@@ -54,13 +80,7 @@ export function CorrectionRow({ submission, showContext = false, onGrade }: Corr
         {submission.grade == null && <Badge className="bg-amber-500/20 text-amber-400 text-[10px]">Pendente</Badge>}
       </div>
     )}
-    {submission.file_url && (
-      <a href={submission.file_url} target="_blank" rel="noopener noreferrer"
-        className="flex items-center gap-1 truncate text-xs text-primary hover:underline">
-        <Link2 className="h-3 w-3" />{submission.file_url}
-      </a>
-    )}
-    {submission.comment && <p className="text-xs italic text-muted-foreground">{submission.comment}</p>}
+    <SubmissionContent submission={submission} />
     <div className="flex items-center gap-2">
       <Input aria-label="Nota de 0 a 10" placeholder="Nota (0-10)" value={grade} disabled={busy}
         onChange={event => setGrade(event.target.value)}

@@ -118,6 +118,9 @@ async function checkActivitySubmission(browser, type) {
       await fulfill(route, 200, [{ ...node, completed: sent }])
     } else if (pathname === "/api/activities") {
       await fulfill(route, 200, [{ ...activity, my_submission: sent ? { id: "smoke-submission", comment: "Resposta preservada" } : null }])
+    } else if (pathname === "/api/nodes/smoke-node/content") {
+      await fulfill(route, 200, { node: { ...node, completed: sent }, material: null,
+        activity: { ...activity, my_submission: sent ? { id: "smoke-submission", comment: "Resposta preservada" } : null } })
     } else if (pathname === "/api/activities/smoke-activity/submit") {
       const payload = request.postDataJSON()
       submissions.push(payload)
@@ -173,6 +176,130 @@ async function checkRecovery(browser) {
   }
 }
 
+async function checkUnlockedContent(browser, type) {
+  const eixo = type === "trainee" ? "trainee" : "vendas"
+  const user = { ...admin, id: `content-${type}`, type, cargo: type, eixo }
+  let completed = false
+  let failEndpoint = null
+  let missing = false
+  const material = { id: "next-material", name: "Material liberado", type: type === "trainee" ? "trainee" : "membro", eixo, text: "Texto disponível após concluir a etapa anterior.", videos: [], documents: [] }
+  const firstMaterial = { ...material, id: "first-material", name: "Primeiro material" }
+  const activity = { id: "next-activity", title: "Atividade liberada", description: "Instruções da próxima etapa.", eixo, material_id: material.id, accepts_file: false, effective_open: true, is_open: true, submission_count: 0 }
+  const baseNode = { eixo, completed: false, unlocked: true, is_released: true, user_score: 0, questions: [] }
+  const { page, context } = await authenticatedPage(browser, user, async (route, pathname) => {
+    if (pathname === "/api/nodes") {
+      await fulfill(route, 200, [
+        { ...baseNode, id: "first-node", name: "Primeira etapa", type: "material", reference_id: firstMaterial.id, order_index: 0, completed },
+        { ...baseNode, id: "next-node", name: "Próxima etapa", type: "activity", activity_id: activity.id, order_index: 1, unlocked: completed },
+        { ...baseNode, id: "orphan-node", name: "Etapa antiga sem vínculo", type: "material", reference_id: null, order_index: 2 },
+      ])
+    } else if (pathname === "/api/nodes/first-node/content") {
+      await fulfill(route, 200, { node: { ...baseNode, id: "first-node", type: "material", completed }, material: firstMaterial, activity: null })
+    } else if (pathname === "/api/nodes/next-node/content") {
+      await fulfill(route, failEndpoint ? 500 : missing ? 404 : 200, failEndpoint
+        ? { detail: "Falha temporária" } : missing
+        ? { detail: "O conteúdo desta etapa não está disponível." }
+        : { node: { ...baseNode, id: "next-node", type: "activity" }, material, activity })
+    } else if (pathname === "/api/nodes/orphan-node/content") {
+      await fulfill(route, 404, { detail: "Esta etapa está sem conteúdo vinculado. Vincule uma atividade." })
+    } else if (pathname === "/api/nodes/first-node/complete") {
+      completed = true
+      await fulfill(route, 200, { completed: true })
+    } else if (pathname === "/api/materials") {
+      await fulfill(route, failEndpoint === pathname ? 500 : 200,
+        failEndpoint === pathname ? { detail: "Falha temporária nos materiais" } : [firstMaterial])
+    } else if (pathname === "/api/activities") {
+      await fulfill(route, failEndpoint === pathname ? 500 : 200,
+        failEndpoint === pathname ? { detail: "Falha temporária nas atividades" } : completed && !missing ? [activity] : [])
+    } else return false
+    return true
+  })
+  try {
+    await page.goto(`${baseURL}/${type === "trainee" ? "trainees" : "membros"}`)
+    const next = page.getByRole("button", { name: "Próxima etapa", exact: true })
+    assert.equal(await next.isDisabled(), true)
+    await page.getByRole("button", { name: "Primeira etapa", exact: true }).click()
+    await page.getByRole("dialog").getByRole("button", { name: "Concluir etapa", exact: true }).click()
+    await page.getByRole("dialog").waitFor({ state: "hidden" })
+    await next.click()
+    const dialog = page.getByRole("dialog")
+    await dialog.getByText(material.text, { exact: true }).waitFor()
+    await dialog.getByText(activity.description, { exact: true }).waitFor()
+    await dialog.getByRole("button", { name: "Fechar Leitor", exact: true }).click()
+
+    // Access can change while the page is open; retry must fetch fresh lists.
+    missing = true
+    await next.click()
+    await dialog.getByText(/O conteúdo desta etapa não está disponível/).waitFor()
+    missing = false
+    await dialog.getByRole("button", { name: "Tentar novamente" }).click()
+    await dialog.getByText(material.text, { exact: true }).waitFor()
+    await dialog.getByText(activity.description, { exact: true }).waitFor()
+    await dialog.getByRole("button", { name: "Fechar Leitor", exact: true }).click()
+
+    for (const endpoint of ["/api/materials", "/api/activities"]) {
+      failEndpoint = endpoint
+      await next.click()
+      await dialog.getByRole("alert").waitFor()
+      failEndpoint = null
+      await dialog.getByRole("button", { name: "Tentar novamente" }).click()
+      await dialog.getByText(material.text, { exact: true }).waitFor()
+      await dialog.getByText(activity.description, { exact: true }).waitFor()
+      assert.equal(await dialog.getByRole("alert").count(), 0)
+      await dialog.getByRole("button", { name: "Fechar Leitor", exact: true }).click()
+    }
+
+    missing = true
+    await next.click()
+    await dialog.getByText(/O conteúdo desta etapa não está disponível/).waitFor()
+    assert.equal(await dialog.getByText("Carregando conteúdo...", { exact: true }).count(), 0)
+    await dialog.getByRole("button", { name: "Close", exact: true }).click()
+    await page.getByRole("button", { name: "Etapa antiga sem vínculo", exact: true }).click()
+    await dialog.getByText(/Esta etapa está sem conteúdo vinculado/).waitFor()
+    const descriptionId = await dialog.getAttribute("aria-describedby")
+    assert.ok(descriptionId)
+    assert.ok(await page.locator(`[id="${descriptionId}"]`).textContent())
+    console.log(`PASS conteúdo ${type}: desbloqueio, atualização ao abrir, erros, conteúdo ausente e etapa sem vínculo`)
+  } finally {
+    await context.close()
+  }
+}
+
+async function checkNodeActivityLink(browser) {
+  const material = { id: "linked-material", name: "Material da biblioteca", type: "trainee", eixo: "trainee", text: "Texto", videos: [], documents: [] }
+  const activity = { id: "linked-activity", title: "Atividade com material", eixo: "trainee", material_id: material.id, weight: 1 }
+  let node = { id: "legacy-link", name: "Nó existente", type: "material", eixo: "trainee", activity_id: null, reference_id: null, is_released: true, released_at: null, order_index: 0, questions: [] }
+  let saves = 0
+  const { page, context } = await authenticatedPage(browser, admin, async (route, pathname, request) => {
+    if (pathname === "/api/materials") await fulfill(route, 200, [material])
+    else if (pathname === "/api/activities") await fulfill(route, 200, [activity])
+    else if (pathname === "/api/nodes") await fulfill(route, 200, [node])
+    else if (pathname === "/api/nodes/legacy-link/activity") {
+      assert.equal(request.method(), "PATCH")
+      assert.deepEqual(request.postDataJSON(), { activity_id: activity.id })
+      node = { ...node, type: "activity", activity_id: activity.id, reference_id: null }
+      saves++
+      await fulfill(route, 200, node)
+    } else return false
+    return true
+  })
+  try {
+    await page.goto(baseURL)
+    await page.getByRole("tab", { name: /Trilha/ }).click()
+    await page.getByLabel("Atividade do nó", { exact: true }).selectOption(activity.id)
+    await page.getByText(`Material da atividade: ${material.name}`, { exact: true }).waitFor()
+    await page.getByRole("button", { name: "Salvar atividade do nó", exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('[id="node-activity-legacy-link"]')?.value === "linked-activity"
+      && [...document.querySelectorAll('button')].some(button => button.textContent === "Salvar atividade do nó" && button.disabled))
+    assert.equal(saves, 1)
+    await page.getByRole("button", { name: "Novo Nó", exact: true }).click()
+    assert.deepEqual(await page.locator('#node-type option').evaluateAll(options => options.map(option => option.value)), ["activity", "game"])
+    await page.getByLabel("Atividade Associada *", { exact: true }).selectOption(activity.id)
+    assert.ok((await page.locator('#node-activity option:checked').textContent()).includes(material.name))
+    console.log("PASS autoria: nó recebe atividade, mostra o material e permite reparar vínculo antigo")
+  } finally { await context.close() }
+}
+
 async function checkManagerRoutes(browser) {
   for (const role of ["admin", "organizador"]) {
     const { page, context } = await authenticatedPage(browser, { ...admin, type: role })
@@ -194,9 +321,12 @@ async function main() {
     await checkMaterialForm(browser)
     await checkActivitySubmission(browser, "membro")
     await checkActivitySubmission(browser, "trainee")
+    await checkUnlockedContent(browser, "membro")
+    await checkUnlockedContent(browser, "trainee")
     await checkRecovery(browser)
     await checkManagerRoutes(browser)
-    console.log("7 cenários de estabilização passaram.")
+    await checkNodeActivityLink(browser)
+    console.log("10 cenários de estabilização passaram.")
   } finally {
     await browser.close()
   }

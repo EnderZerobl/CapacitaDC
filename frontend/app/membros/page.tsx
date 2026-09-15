@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -20,7 +20,10 @@ import {
   FileText, Video, ExternalLink, Award, ClipboardList, Upload, Clock, Link2
 } from "lucide-react"
 
-import { useNodes } from "@/features/nodes/hooks"
+import { ActivitySubmissionForm } from "@/components/activities/submission-form"
+import { SubmissionContent } from "@/components/activities/submission-content"
+
+import { useNodes, useNodeContent } from "@/features/nodes/hooks"
 import type { GameAnswer, GameResult } from "@/features/nodes/types"
 import { useActivities } from "@/features/activities/hooks"
 import { useMaterials } from "@/features/materials/hooks"
@@ -33,20 +36,20 @@ export default function MembrosPage() {
   const router = useRouter()
   const { user, logout, isLoading, refreshUser } = useAuth()
 
-  const { materials } = useMaterials()
+  const { materials, refresh: refreshMaterials } = useMaterials()
   const contents: ContentItem[] = materials as unknown as ContentItem[]
   const { nodes, completeNode, submitGame, refresh: refreshNodes } = useNodes()
-  const { activities, submitActivity: submitActivityHook } = useActivities()
+  const { activities, refresh: refreshActivities } = useActivities()
 
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
-  const [submitState, setSubmitState] = useState<Record<string, { fileUrl: string; comment: string }>>({})
-  const [submitting, setSubmitting] = useState<string | null>(null)
-  const [submissionErrors, setSubmissionErrors] = useState<Record<string, string>>({})
   const [activeTab, setActiveTab] = useState("trilhas")
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedNode, setSelectedNode] = useState<any | null>(null)
   const [isPlayingGame, setIsPlayingGame] = useState(false)
   const [isReadingMaterial, setIsReadingMaterial] = useState(false)
+  const { content: nodeContent, loading: contentLoading, error: contentError, refresh: refreshNodeContent } = useNodeContent(
+    isReadingMaterial ? selectedNode?.id ?? null : null
+  )
   const [selectedEixo, setSelectedEixo] = useState<string>("todos")
 
   const fetchLeaderboard = async () => {
@@ -69,30 +72,10 @@ export default function MembrosPage() {
 
   const refreshProgress = async () => {
     // The submission is already saved; a refresh failure must not be reported as a failed submission.
-    const results = await Promise.allSettled([refreshUser(), fetchLeaderboard(), refreshNodes()])
+    const results = await Promise.allSettled([refreshUser(), fetchLeaderboard(), refreshNodes(), refreshMaterials(), refreshActivities()])
     results.forEach(result => {
       if (result.status === "rejected") console.error("Erro ao atualizar progresso:", result.reason)
     })
-  }
-
-  const handleSubmitActivity = async (activityId: string, nodeId?: string) => {
-    const state = submitState[activityId] || { fileUrl: "", comment: "" }
-    setSubmitting(activityId)
-    setSubmissionErrors(previous => ({ ...previous, [activityId]: "" }))
-    try {
-      const result = await submitActivityHook(activityId, state.fileUrl || null, state.comment || "", nodeId)
-      await refreshProgress()
-      return result
-    } finally {
-      setSubmitting(null)
-    }
-  }
-
-  const showSubmissionError = (activityId: string, error: unknown) => {
-    setSubmissionErrors(previous => ({
-      ...previous,
-      [activityId]: error instanceof Error ? error.message : "Erro ao enviar atividade",
-    }))
   }
 
   const handleLogout = () => { logout(); router.push("/login") }
@@ -100,7 +83,9 @@ export default function MembrosPage() {
   const handleSelectNode = (node: any) => {
     setSelectedNode(node)
     if (node.type === "game") setIsPlayingGame(true)
-    else setIsReadingMaterial(true)
+    else {
+      setIsReadingMaterial(true)
+    }
   }
 
   const handleGameComplete = async (answers: GameAnswer[]): Promise<GameResult> => {
@@ -132,13 +117,8 @@ export default function MembrosPage() {
   const connectionsNodes = nodes.filter(n => n.eixo === "conexoes")
   const cxNodes = nodes.filter(n => n.eixo === "experiencia")
 
-  const relatedActivity = selectedNode
-    ? (activities.find((a: any) => a.id === selectedNode.activity_id) || activities.find((a: any) => a.id === selectedNode.reference_id))
-    : null
-
-  const activeMaterial = selectedNode
-    ? (contents.find(c => c.id === selectedNode.reference_id) || (relatedActivity ? contents.find(c => c.id === (relatedActivity as any).material_id) : null))
-    : null
+  const relatedActivity = nodeContent?.activity
+  const activeMaterial = nodeContent?.material
 
   const filteredContents = contents.filter((content) =>
     content.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -323,11 +303,19 @@ export default function MembrosPage() {
       <Dialog open={isReadingMaterial} onOpenChange={setIsReadingMaterial}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card border-border text-foreground">
           <DialogHeader>
-            <DialogTitle className={activeMaterial || relatedActivity ? "text-xl font-extrabold mt-2 leading-tight" : "sr-only"}>
+            <DialogTitle className="text-xl font-extrabold mt-2 leading-tight">
               {activeMaterial?.name || selectedNode?.name || "Material de Capacitação"}
             </DialogTitle>
+            <DialogDescription className="sr-only">Conteúdo e atividades da etapa selecionada na trilha.</DialogDescription>
           </DialogHeader>
-          {activeMaterial || relatedActivity ? (
+          {contentLoading || (!nodeContent && !contentError) ? (
+            <p role="status" className="py-8 text-center text-sm text-muted-foreground">Carregando conteúdo...</p>
+          ) : contentError ? (
+            <div className="space-y-4 py-8 text-center">
+              <p role="alert" className="text-sm text-destructive">{contentError}</p>
+              <Button variant="outline" onClick={() => void refreshNodeContent()}>Tentar novamente</Button>
+            </div>
+          ) : activeMaterial || relatedActivity ? (
             <>
               <div className="flex items-center justify-between">
                 <Badge className="bg-primary/20 text-primary border-primary/30 uppercase tracking-widest text-[9px] font-extrabold">
@@ -408,15 +396,7 @@ export default function MembrosPage() {
                     {relatedActivity.my_submission ? (
                       <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/20 p-3 space-y-2">
                         <p className="text-xs font-semibold text-emerald-400">✓ Atividade Enviada</p>
-                        {relatedActivity.my_submission.file_url && (
-                          <a href={relatedActivity.my_submission.file_url} target="_blank" rel="noopener noreferrer"
-                            className="text-xs text-primary flex items-center gap-1 hover:underline truncate">
-                            <Link2 className="h-3 w-3" />{relatedActivity.my_submission.file_url}
-                          </a>
-                        )}
-                        {relatedActivity.my_submission.comment && (
-                          <p className="text-xs text-muted-foreground italic">"{relatedActivity.my_submission.comment}"</p>
-                        )}
+                        <SubmissionContent submission={relatedActivity.my_submission} />
                         {relatedActivity.my_submission.grade !== null && relatedActivity.my_submission.grade !== undefined && (
                           <div className="pt-2 border-t border-emerald-500/20">
                             <p className="text-xs font-bold text-emerald-400">Nota: {relatedActivity.my_submission.grade.toFixed(1)}</p>
@@ -430,62 +410,13 @@ export default function MembrosPage() {
 
                     {/* If open and not submitted, show the inputs */}
                     {relatedActivity.effective_open && !relatedActivity.my_submission && (
-                      <div className="space-y-3 p-3 bg-secondary/30 border border-border rounded-xl">
-                        {relatedActivity.accepts_file && (
-                          <div className="space-y-1">
-                            <label className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Link2 className="h-3 w-3" /> Link do arquivo (Google Drive, Dropbox, etc.)
-                            </label>
-                            <Input
-                              placeholder="https://drive.google.com/..."
-                              value={submitState[relatedActivity.id]?.fileUrl || ""}
-                              onChange={(e) => setSubmitState(prev => ({ 
-                                ...prev, 
-                                [relatedActivity.id]: { 
-                                  fileUrl: e.target.value, 
-                                  comment: submitState[relatedActivity.id]?.comment || "" 
-                                } 
-                              }))}
-                              className="bg-background border-border text-xs h-9"
-                            />
-                          </div>
-                        )}
-                        <div className="space-y-1">
-                          <label className="text-xs text-muted-foreground">Comentário (opcional)</label>
-                          <Textarea
-                            placeholder="Adicione observações..."
-                            value={submitState[relatedActivity.id]?.comment || ""}
-                            onChange={(e) => setSubmitState(prev => ({ 
-                              ...prev, 
-                              [relatedActivity.id]: { 
-                                fileUrl: submitState[relatedActivity.id]?.fileUrl || "", 
-                                comment: e.target.value 
-                              } 
-                            }))}
-                            className="bg-background border-border text-xs min-h-[60px] resize-none"
-                          />
-                        </div>
-                        {submissionErrors[relatedActivity.id] && (
-                          <p role="alert" className="text-sm text-destructive">{submissionErrors[relatedActivity.id]}</p>
-                        )}
-                        <Button
-                          size="sm"
-                          className="w-full gap-2 bg-primary hover:bg-primary/95 text-white"
-                          disabled={submitting === relatedActivity.id || (relatedActivity.accepts_file && !(submitState[relatedActivity.id]?.fileUrl))}
-                          onClick={async () => {
-                            try {
-                              await handleSubmitActivity(relatedActivity.id, selectedNode.id)
-                              setIsReadingMaterial(false)
-                              setSelectedNode(null)
-                            } catch (error) {
-                              showSubmissionError(relatedActivity.id, error)
-                            }
-                          }}
-                        >
-                          <Upload className="h-3.5 w-3.5" />
-                          {submitting === relatedActivity.id ? "Enviando..." : "Enviar atividade e concluir etapa"}
-                        </Button>
-                      </div>
+                      <ActivitySubmissionForm activity={relatedActivity} nodeId={selectedNode.id}
+                        onSubmitted={async () => {
+                          await refreshActivities()
+                          await refreshProgress()
+                          setIsReadingMaterial(false)
+                          setSelectedNode(null)
+                        }} />
                     )}
                   </div>
                 )}
@@ -496,16 +427,19 @@ export default function MembrosPage() {
                     Fechar Leitor
                   </Button>
                   {selectedNode?.type === "material" && (!relatedActivity || relatedActivity.my_submission) && (
-                    <Button onClick={handleCompleteMaterial} disabled={selectedNode?.completed}>
-                      {selectedNode?.completed ? "Já concluído" : "Concluir etapa"}
+                    <Button onClick={handleCompleteMaterial} disabled={nodeContent?.node.completed}>
+                      {nodeContent?.node.completed ? "Já concluído" : "Concluir etapa"}
                     </Button>
                   )}
                 </div>
               </div>
             </>
           ) : (
-            <div className="py-8 text-center text-muted-foreground text-sm">
-              Carregando conteúdo...
+            <div className="space-y-4 py-8 text-center text-sm text-muted-foreground">
+              <p role="status">{!selectedNode?.reference_id && !selectedNode?.activity_id
+                ? "Esta etapa está sem conteúdo vinculado. Avise o responsável pela trilha para associar o material ou a atividade."
+                : "O conteúdo desta etapa não está disponível. Ele pode ter sido removido ou ter o acesso alterado."}</p>
+              <Button variant="outline" onClick={() => void refreshNodeContent()}>Tentar novamente</Button>
             </div>
           )}
         </DialogContent>
@@ -516,6 +450,7 @@ export default function MembrosPage() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card border-border p-0">
           <DialogHeader className="sr-only">
             <DialogTitle>{selectedNode?.name || "Questionário"}</DialogTitle>
+            <DialogDescription>Jogo da etapa selecionada na trilha.</DialogDescription>
           </DialogHeader>
           {selectedNode && isPlayingGame && (
             <div className="p-6">

@@ -65,11 +65,19 @@ Pontuação de jogos/ranking e nota de atividades são medidas diferentes. Os po
 
 ## Trilhas e acesso ao conteúdo
 
-Cada etapa (`TrainingNode`) referencia um material, atividade ou versão publicada de jogo. A trilha é sequencial por eixo: a etapa anterior na ordem é o pré-requisito implícito. Quando existe um pré-requisito explícito, ele prevalece. As conexões visuais seguem a regra usada pela API.
+O fluxo de autoria de conteúdo é **material → atividade → nó**: crie o material na biblioteca, selecione-o na atividade e vincule a atividade ao nó. Materiais também podem existir apenas na biblioteca, sem atividade ou nó. A criação de nós oferece atividade ou versão publicada de jogo; nós antigos de leitura continuam compatíveis. No gerenciamento da trilha é possível vincular ou trocar a atividade de um nó existente. Ao abrir a etapa, `GET /api/nodes/{id}/content` retorna sua atividade, o material dessa atividade (texto, documentos e vídeos) e a entrega do participante, depois de verificar as permissões e o desbloqueio. O leitor não depende da lista de materiais já carregada no navegador. A trilha é sequencial por eixo: a etapa anterior na ordem é o pré-requisito implícito. Quando existe um pré-requisito explícito, ele prevalece. As conexões visuais seguem a regra usada pela API.
 
 O administrador pode liberar etapas imediatamente ou agendar a liberação. Participantes só abrem etapas liberadas e com pré-requisitos concluídos. Materiais e atividades vinculados exclusivamente a etapas bloqueadas não aparecem nas bibliotecas do participante; material sem etapa permanece disponível conforme seu público.
 
 Reordenar muda a sequência implícita. Excluir ou alterar conteúdos já usados pode afetar acesso e progresso; confira os vínculos antes de fazê-lo. Conteúdo já concluído pode continuar sendo consultado conforme as regras de visibilidade.
+
+## Anexos nas entregas
+
+O formulário apresenta **anexos → links → comentários**. Cada entrega aceita até 5 anexos, com até 20 MB por arquivo, até 10 links HTTP/HTTPS e um comentário de até 5.000 caracteres. Os formatos aceitos são PDF, DOC/DOCX/ODT, XLS/XLSX/ODS, PPT/PPTX/ODP, PNG/JPG/JPEG/GIF/WEBP, TXT, CSV e ZIP. Se a atividade exige arquivo, um link não substitui o anexo obrigatório.
+
+Os participantes enviam arquivos por `POST /api/activities/{id}/attachments` e informam seus IDs ao entregar a atividade. A API verifica o autor, a atividade, a liberação da etapa e os limites. Os anexos ficam em `backend/submission_uploads/`, fora da pasta pública, e são baixados por uma rota autenticada pelo autor ou pelos gestores autorizados após a entrega. Eles aparecem na entrega, na fila de correções e no perfil. Alterar anexos, links ou comentário invalida a correção anterior, como já ocorria ao alterar a resposta.
+
+A migração 5 adiciona a lista de links e a tabela de anexos, preservando links e notas das entregas antigas. A pasta privada de anexos também precisa de armazenamento persistente e backup.
 
 ## Jogos disponíveis
 
@@ -132,6 +140,7 @@ Rotas principais (consulte `/docs` na API para o contrato completo):
 | Fila | `GET /api/submissions`, com filtros de situação, pessoa, tipo, eixo, atividade e paginação |
 | Notas e ranking | `GET /api/grades`, `GET /api/leaderboard` |
 | Trilhas | `GET/POST /api/nodes`, liberação, ordenação, conclusão e exclusão por ID |
+| Conteúdo da etapa | `GET /api/nodes/{id}/content`, `PATCH /api/nodes/{id}/activity` |
 | Jogos | `GET/POST /api/games`, edição, duplicação, publicação e versões por ID |
 | Tentativas | `POST /api/nodes/{id}/attempts`, leitura e respostas/conclusão em `/api/game-attempts/{id}` |
 | Arquivos | `POST /api/upload`, leitura em `/uploads/{arquivo}` |

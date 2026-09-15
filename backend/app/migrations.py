@@ -129,3 +129,10 @@ def migrate(engine):
                         {"average": average, "id": user_id},
                     )
             connection.execute(text("INSERT INTO schema_migrations(version) VALUES (4)"))
+
+        if 5 not in applied:
+            columns = {column["name"] for column in inspect(connection).get_columns("activity_submissions")}
+            if "links" not in columns:
+                connection.execute(text("ALTER TABLE activity_submissions ADD COLUMN links JSON"))
+            connection.execute(text("UPDATE activity_submissions SET links = '[]' WHERE links IS NULL"))
+            connection.execute(text("INSERT INTO schema_migrations(version) VALUES (5)"))

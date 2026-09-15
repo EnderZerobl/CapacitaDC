@@ -1,7 +1,9 @@
 // features/nodes/api.ts — All HTTP calls related to training nodes
 
 import { apiClient } from "@/lib/api-client"
+import { mapMaterial, type RawMaterial } from "@/features/materials/api"
 import type {
+  NodeContent,
   TrainingNode,
   NodeReleasePayload,
   NodeOrderPayload,
@@ -10,6 +12,14 @@ import type {
 } from "./types"
 
 export const nodesApi = {
+  content: async (nodeId: string): Promise<NodeContent> => {
+    const result = await apiClient.get<Omit<NodeContent, "material"> & { material: RawMaterial | null }>(`/api/nodes/${nodeId}/content`)
+    return { ...result, material: result.material ? mapMaterial(result.material) : null }
+  },
+
+  updateActivity: (nodeId: string, activityId: string) =>
+    apiClient.patch<TrainingNode>(`/api/nodes/${nodeId}/activity`, { activity_id: activityId }),
+
   list: () => apiClient.get<TrainingNode[]>("/api/nodes"),
 
   create: (payload: Omit<TrainingNode, "id" | "unlocked" | "completed" | "user_score"> & {

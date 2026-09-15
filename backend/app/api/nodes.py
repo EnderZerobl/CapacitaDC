@@ -12,6 +12,7 @@ from app import models, schemas
 from app.auth import get_current_user, get_current_organizador_or_admin
 from app.services import node_service, access
 from app.services.game_service import revision_for_node
+from app.services.activity_service import activity_weight, is_effectively_open, submission_to_out
 
 router = APIRouter()
 
@@ -23,6 +24,80 @@ def get_training_nodes(
     current_user: models.User = Depends(get_current_user),
 ):
     return node_service.list_nodes_for_user(db, current_user)
+
+
+@router.get("/{node_id}/content", response_model=schemas.NodeContentOut)
+def get_node_content(
+    node_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    node = db.get(models.TrainingNode, node_id)
+    if node is None:
+        raise HTTPException(404, "Etapa não encontrada")
+    access.ensure_node_access(db, node, current_user, require_unlocked=True)
+    if node.type == "game":
+        raise HTTPException(400, "Abra este jogo pela opção de jogar na trilha.")
+
+    activity_out = None
+    # Activity nodes always resolve their material through the activity. Older
+    # material-only nodes remain readable without creating an artificial activity.
+    if node.type == "activity" or node.activity_id:
+        activity = db.get(models.Activity, node.activity_id or node.reference_id) if (node.activity_id or node.reference_id) else None
+        if activity is None:
+            raise HTTPException(404, "Esta etapa está sem atividade disponível. Peça ao responsável pela trilha para vincular uma atividade.")
+        access.ensure_activity_access(current_user, activity)
+        material_id = activity.material_id
+        submission = next((s for s in activity.submissions if s.user_id == current_user.id), None)
+        activity_out = schemas.ActivityOut.model_validate(activity)
+        activity_out.weight = activity_weight(activity)
+        activity_out.effective_open = is_effectively_open(activity)
+        activity_out.submission_count = len(activity.submissions)
+        activity_out.my_submission = submission_to_out(submission, user=current_user, activity=activity) if submission else None
+    else:
+        material_id = node.reference_id
+        if not material_id:
+            raise HTTPException(404, "Esta etapa está sem conteúdo vinculado. Peça ao responsável pela trilha para vincular uma atividade.")
+
+    material = db.get(models.Material, material_id) if material_id else None
+    if material_id and material is None:
+        raise HTTPException(404, "O material vinculado não foi encontrado. Peça ao responsável para atualizar o material da atividade.")
+    if material:
+        access.ensure_material_access(current_user, material)
+    progress = db.query(models.UserNodeProgress).filter_by(user_id=current_user.id, node_id=node.id).first()
+    return schemas.NodeContentOut(
+        node=node_service.node_to_out(node, completed=bool(progress and progress.completed),
+                                      user_score=progress.score if progress else 0, include_answers=False),
+        activity=activity_out,
+        material=material,
+    )
+
+
+@router.patch("/{node_id}/activity", response_model=schemas.TrainingNodeGraphOut)
+def update_node_activity(
+    node_id: str,
+    payload: schemas.NodeActivityUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_organizador_or_admin),
+):
+    node = db.get(models.TrainingNode, node_id)
+    if node is None:
+        raise HTTPException(404, "Etapa não encontrada")
+    access.ensure_node_eixo_access(current_user, node.eixo)
+    if node.type == "game":
+        raise HTTPException(400, "Etapas de jogo não podem ser convertidas em atividades.")
+    activity = db.get(models.Activity, payload.activity_id)
+    if activity is None:
+        raise HTTPException(404, "Atividade não encontrada")
+    access.ensure_activity_access(current_user, activity, manage=True)
+    if activity.eixo not in {node.eixo, "all"}:
+        raise HTTPException(400, "A atividade deve pertencer ao eixo da etapa")
+    node.type = "activity"
+    node.activity_id = activity.id
+    node.reference_id = None
+    db.commit()
+    db.refresh(node)
+    return node_service.node_to_out(node)
 
 
 @router.post("/", response_model=schemas.TrainingNodeGraphOut)

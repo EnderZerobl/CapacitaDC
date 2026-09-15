@@ -53,6 +53,15 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
     }
   }, [userType])
 
+  // O eixo "trainee" é o que a biblioteca do trainee filtra: um material do tipo
+  // trainee com outro eixo (dado legado ou corrigido fora do formulário) fica
+  // invisível para quem devia vê-lo.
+  useEffect(() => {
+    if (editedContent.type === "trainee" && editedContent.eixo !== "trainee") {
+      setEditedContent(prev => ({ ...prev, eixo: "trainee" }))
+    }
+  }, [editedContent.type, editedContent.eixo])
+
   const handleSave = async () => {
     if (savingRef.current || uploading) return
     if (!editedContent.name.trim()) {

@@ -9,6 +9,7 @@ import type {
   ActivityCreatePayload,
   ActivityUpdatePayload,
   ActivitySubmissionOut,
+  SubmissionCreatePayload,
   SubmissionQueueFilters,
 } from "./types"
 
@@ -26,6 +27,7 @@ export function useActivities() {
       setLoading(true)
       const data = await activitiesApi.list()
       setActivities(data)
+      setError(null)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao carregar atividades")
     } finally {
@@ -73,17 +75,8 @@ export function useActivities() {
     setExpandedActivity(activityId)
   }
 
-  const submitActivity = async (
-    activityId: string,
-    fileUrl: string | null,
-    comment: string,
-    nodeId?: string
-  ) => {
-    const result = await activitiesApi.submit(activityId, {
-      file_url: fileUrl || null,
-      comment: comment || "",
-      node_id: nodeId,
-    })
+  const submitActivity = async (activityId: string, payload: SubmissionCreatePayload) => {
+    const result = await activitiesApi.submit(activityId, payload)
     await refresh()
     return result
   }
@@ -107,6 +100,19 @@ export function useActivities() {
     return updated
   }
 
+  const deleteSubmission = async (activityId: string, submissionId: string) => {
+    await activitiesApi.deleteSubmission(activityId, submissionId)
+    setActivitySubmissions((prev) => ({
+      ...prev,
+      [activityId]: (prev[activityId] || []).filter((s) => s.id !== submissionId),
+    }))
+    setActivities((prev) =>
+      prev.map((a) =>
+        a.id === activityId ? { ...a, submission_count: Math.max(0, a.submission_count - 1) } : a
+      )
+    )
+  }
+
   return {
     activities,
     loading,
@@ -121,6 +127,7 @@ export function useActivities() {
     loadSubmissions,
     submitActivity,
     gradeSubmission,
+    deleteSubmission,
   }
 }
 
@@ -161,5 +168,10 @@ export function useSubmissionQueue() {
     return updated
   }
 
-  return { items, filters, setFilters, setPage, pageSize, hasMore, loading, error, refresh, grade }
+  const remove = async (activityId: string, submissionId: string) => {
+    await activitiesApi.deleteSubmission(activityId, submissionId)
+    setItems(previous => previous.filter(item => item.id !== submissionId))
+  }
+
+  return { items, filters, setFilters, setPage, pageSize, hasMore, loading, error, refresh, grade, remove }
 }

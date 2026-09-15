@@ -21,6 +21,7 @@ frontend/out/
 
 # Uploads: a pasta é criada na inicialização por backend/app/main.py
 backend/uploads/
+backend/submission_uploads/
 
 # Editores e caches de ferramentas
 .DS_Store

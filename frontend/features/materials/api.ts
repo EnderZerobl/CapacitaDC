@@ -3,7 +3,7 @@
 import { apiClient } from "@/lib/api-client"
 import type { Material, MaterialCreatePayload } from "./types"
 
-interface RawMaterial {
+export interface RawMaterial {
   id: string
   name: string
   type: string
@@ -13,7 +13,7 @@ interface RawMaterial {
   videos: { id: string; url: string }[]
 }
 
-function mapMaterial(raw: RawMaterial): Material {
+export function mapMaterial(raw: RawMaterial): Material {
   return {
     id: raw.id,
     name: raw.name,

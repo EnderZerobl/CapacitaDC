@@ -208,7 +208,9 @@ class ActivitySubmission(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     activity_id = Column(String, ForeignKey("activities.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    file_url = Column(String, nullable=True)       # URL do arquivo enviado (Google Drive, etc.)
+    file_url = Column(String, nullable=True)       # Legacy submissions
+    links = Column(JSON, nullable=True, default=list)
+    attachments = relationship("SubmissionAttachment", back_populates="submission")
     comment = Column(Text, nullable=True, default="")  # Comentário opcional do trainee
     submitted_at = Column(DateTime, nullable=True)
     grade = Column(Float, nullable=True)           # Nota atribuída pelo admin (0-10)
@@ -217,3 +219,19 @@ class ActivitySubmission(Base):
     # Relationships
     activity = relationship("Activity", back_populates="submissions")
     user = relationship("User")
+
+
+class SubmissionAttachment(Base):
+    __tablename__ = "submission_attachments"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    activity_id = Column(String, ForeignKey("activities.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    submission_id = Column(String, ForeignKey("activity_submissions.id", ondelete="SET NULL"), nullable=True)
+    name = Column(String, nullable=False)
+    storage_key = Column(String, nullable=False)
+    size = Column(Integer, nullable=False)
+    submission = relationship("ActivitySubmission", back_populates="attachments")
+
+    @property
+    def url(self):
+        return f"/api/activities/{self.activity_id}/attachments/{self.id}"
