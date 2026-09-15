@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context"
 import { type ContentItem } from "@/lib/content-data"
 import { ViewContentCard } from "@/components/content/view-content-card"
 import { TrainingPath } from "@/components/dashboard/training-path"
+import { LibraryGame } from "@/components/games/library-game"
 import { SpinGame } from "@/components/games/spin-game"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -21,6 +22,7 @@ import {
 } from "lucide-react"
 
 import { useNodes } from "@/features/nodes/hooks"
+import type { GameAnswer, GameResult } from "@/features/nodes/types"
 import { useActivities } from "@/features/activities/hooks"
 import { useMaterials } from "@/features/materials/hooks"
 
@@ -30,16 +32,17 @@ interface LeaderboardEntry {
 
 export default function TraineesPage() {
   const router = useRouter()
-  const { user, logout, isLoading } = useAuth()
+  const { user, logout, isLoading, refreshUser } = useAuth()
 
   const { materials } = useMaterials()
   const contents: ContentItem[] = materials as unknown as ContentItem[]
-  const { nodes, completeNode, submitGame } = useNodes()
+  const { nodes, completeNode, submitGame, refresh: refreshNodes } = useNodes()
   const { activities, submitActivity: submitActivityHook } = useActivities()
 
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [submitState, setSubmitState] = useState<Record<string, { fileUrl: string; comment: string }>>({})
   const [submitting, setSubmitting] = useState<string | null>(null)
+  const [submissionErrors, setSubmissionErrors] = useState<Record<string, string>>({})
   const [activeTab, setActiveTab] = useState("trilha")
   const [selectedNode, setSelectedNode] = useState<any | null>(null)
   const [isPlayingGame, setIsPlayingGame] = useState(false)
@@ -58,19 +61,38 @@ export default function TraineesPage() {
   useEffect(() => {
     if (!isLoading) {
       if (!user) router.push("/login")
-      else if (user.type === "admin") router.push("/")
+      else if (user.type === "admin" || user.type === "organizador") router.push("/")
       else if (user.type === "membro") router.push("/membros")
       else fetchLeaderboard()
     }
   }, [user, isLoading, router])
 
-  const handleSubmitActivity = async (activityId: string) => {
+  const refreshProgress = async () => {
+    // The submission is already saved; a refresh failure must not be reported as a failed submission.
+    const results = await Promise.allSettled([refreshUser(), fetchLeaderboard(), refreshNodes()])
+    results.forEach(result => {
+      if (result.status === "rejected") console.error("Erro ao atualizar progresso:", result.reason)
+    })
+  }
+
+  const handleSubmitActivity = async (activityId: string, nodeId?: string) => {
     const state = submitState[activityId] || { fileUrl: "", comment: "" }
     setSubmitting(activityId)
+    setSubmissionErrors(previous => ({ ...previous, [activityId]: "" }))
     try {
-      await submitActivityHook(activityId, state.fileUrl || null, state.comment || "")
-    } catch (e: any) { alert(e.message || "Erro ao enviar atividade") }
-    finally { setSubmitting(null) }
+      const result = await submitActivityHook(activityId, state.fileUrl || null, state.comment || "", nodeId)
+      await refreshProgress()
+      return result
+    } finally {
+      setSubmitting(null)
+    }
+  }
+
+  const showSubmissionError = (activityId: string, error: unknown) => {
+    setSubmissionErrors(previous => ({
+      ...previous,
+      [activityId]: error instanceof Error ? error.message : "Erro ao enviar atividade",
+    }))
   }
 
   const handleLogout = () => { logout(); router.push("/login") }
@@ -81,25 +103,24 @@ export default function TraineesPage() {
     else setIsReadingMaterial(true)
   }
 
-  const handleGameComplete = async (score: number) => {
-    if (!selectedNode) return
-    try {
-      await submitGame(selectedNode.id, score)
-      setIsPlayingGame(false)
-      setSelectedNode(null)
-    } catch { alert("Erro ao registrar pontuação") }
+  const handleGameComplete = async (answers: GameAnswer[]): Promise<GameResult> => {
+    if (!selectedNode) throw new Error("Selecione um jogo na trilha para continuar.")
+    const result = await submitGame(selectedNode.id, answers)
+    await refreshProgress()
+    return result
   }
 
   const handleCompleteMaterial = async () => {
     if (!selectedNode) return
     try {
       await completeNode(selectedNode.id)
+      await refreshProgress()
       setIsReadingMaterial(false)
       setSelectedNode(null)
     } catch { alert("Erro ao salvar progresso") }
   }
 
-  if (isLoading) {
+  if (isLoading || !user || user.type !== "trainee") {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="animate-pulse text-muted-foreground">Carregando...</div>
@@ -332,11 +353,16 @@ export default function TraineesPage() {
                                 className="bg-secondary border-border text-xs min-h-[60px] resize-none"
                               />
                             </div>
+                            {submissionErrors[activity.id] && (
+                              <p role="alert" className="text-sm text-destructive">{submissionErrors[activity.id]}</p>
+                            )}
                             <Button
                               size="sm"
                               className="w-full gap-2"
                               disabled={isSubmitting || (activity.accepts_file && !state.fileUrl)}
-                              onClick={() => handleSubmitActivity(activity.id)}
+                              onClick={() => {
+                                void handleSubmitActivity(activity.id).catch(error => showSubmissionError(activity.id, error))
+                              }}
                             >
                               <Upload className="h-3.5 w-3.5" />
                               {isSubmitting ? "Enviando..." : submitted ? "Atualizar envio" : "Enviar atividade"}
@@ -395,13 +421,13 @@ export default function TraineesPage() {
 
       {/* MODAL: Leitor de Material */}
       <Dialog open={isReadingMaterial} onOpenChange={setIsReadingMaterial}>
-        <DialogContent className="max-w-2xl bg-card border-border text-foreground">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card border-border text-foreground">
           <DialogHeader>
-            <DialogTitle className={activeMaterial ? "text-xl font-extrabold mt-2 leading-tight" : "sr-only"}>
+            <DialogTitle className={activeMaterial || relatedActivity ? "text-xl font-extrabold mt-2 leading-tight" : "sr-only"}>
               {activeMaterial?.name || selectedNode?.name || "Material de Capacitação"}
             </DialogTitle>
           </DialogHeader>
-          {activeMaterial ? (
+          {activeMaterial || relatedActivity ? (
             <>
               <div className="flex items-center justify-between">
                 <Badge className="bg-primary/20 text-primary border-primary/30 uppercase tracking-widest text-[9px] font-extrabold">
@@ -411,20 +437,20 @@ export default function TraineesPage() {
 
               <div className="space-y-6 mt-4">
                 {/* Texto */}
-                {activeMaterial.text && (
+                {activeMaterial?.text && (
                   <div className="prose prose-sm dark:prose-invert max-w-none bg-muted p-5 rounded-xl border border-border leading-relaxed text-sm text-foreground whitespace-pre-line font-medium">
-                    {activeMaterial.text}
+                    {activeMaterial?.text}
                   </div>
                 )}
 
                 {/* Recursos Adicionais */}
-                {((activeMaterial.videos && activeMaterial.videos.length > 0) ||
-                  (activeMaterial.documents && activeMaterial.documents.length > 0)) && (
+                {((activeMaterial?.videos && activeMaterial?.videos.length > 0) ||
+                  (activeMaterial?.documents && activeMaterial?.documents.length > 0)) && (
                   <div className="space-y-4">
                     <h4 className="font-bold text-xs uppercase tracking-wider text-muted-foreground">Recursos Adicionais</h4>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {activeMaterial.videos?.map((vidUrl, i) => (
+                      {activeMaterial?.videos?.map((vidUrl, i) => (
                         <a
                           key={i}
                           href={vidUrl}
@@ -440,7 +466,7 @@ export default function TraineesPage() {
                         </a>
                       ))}
 
-                      {activeMaterial.documents?.map((doc, i) => (
+                      {activeMaterial?.documents?.map((doc, i) => (
                         <a
                           key={i}
                           href={doc.url}
@@ -537,17 +563,25 @@ export default function TraineesPage() {
                             className="bg-background border-border text-xs min-h-[60px] resize-none"
                           />
                         </div>
+                        {submissionErrors[relatedActivity.id] && (
+                          <p role="alert" className="text-sm text-destructive">{submissionErrors[relatedActivity.id]}</p>
+                        )}
                         <Button
                           size="sm"
                           className="w-full gap-2 bg-primary hover:bg-primary/95 text-white"
                           disabled={submitting === relatedActivity.id || (relatedActivity.accepts_file && !(submitState[relatedActivity.id]?.fileUrl))}
                           onClick={async () => {
-                            await handleSubmitActivity(relatedActivity.id)
-                            await handleCompleteMaterial()
+                            try {
+                              await handleSubmitActivity(relatedActivity.id, selectedNode.id)
+                              setIsReadingMaterial(false)
+                              setSelectedNode(null)
+                            } catch (error) {
+                              showSubmissionError(relatedActivity.id, error)
+                            }
                           }}
                         >
                           <Upload className="h-3.5 w-3.5" />
-                          {submitting === relatedActivity.id ? "Enviando..." : "Enviar Atividade & Concluir Material"}
+                          {submitting === relatedActivity.id ? "Enviando..." : "Enviar atividade e concluir etapa"}
                         </Button>
                       </div>
                     )}
@@ -559,9 +593,9 @@ export default function TraineesPage() {
                   <Button variant="outline" onClick={() => setIsReadingMaterial(false)}>
                     Fechar Leitor
                   </Button>
-                  {(!relatedActivity || relatedActivity.my_submission) && (
+                  {selectedNode?.type === "material" && (!relatedActivity || relatedActivity.my_submission) && (
                     <Button onClick={handleCompleteMaterial} disabled={selectedNode?.completed}>
-                      {selectedNode?.completed ? "Já Concluído" : "Marcar como Concluído (+50 pts)"}
+                      {selectedNode?.completed ? "Já concluído" : "Concluir etapa"}
                     </Button>
                   )}
                 </div>
@@ -577,12 +611,17 @@ export default function TraineesPage() {
 
       {/* MODAL: Jogar Game */}
       <Dialog open={isPlayingGame} onOpenChange={setIsPlayingGame}>
-        <DialogContent className="max-w-2xl bg-card border-border p-0 overflow-hidden">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card border-border p-0">
           <DialogHeader className="sr-only">
-            <DialogTitle>{selectedNode?.name || "Jogo Quiz SPIN"}</DialogTitle>
+            <DialogTitle>{selectedNode?.name || "Questionário"}</DialogTitle>
           </DialogHeader>
           {selectedNode && isPlayingGame && (
             <div className="p-6">
+              {selectedNode.game_revision_id ? (
+                <LibraryGame nodeId={selectedNode.id}
+                  onCompleted={async () => { await refreshProgress(); setIsPlayingGame(false); setSelectedNode(null) }}
+                  onClose={() => { setIsPlayingGame(false); setSelectedNode(null) }} />
+              ) : (
               <SpinGame
                 nodeName={selectedNode.name}
                 questions={selectedNode.questions}
@@ -592,6 +631,7 @@ export default function TraineesPage() {
                   setSelectedNode(null)
                 }}
               />
+              )}
             </div>
           )}
         </DialogContent>

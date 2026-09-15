@@ -4,13 +4,15 @@ api/grades.py — Grades, leaderboard and file upload endpoints.
 
 import uuid
 from pathlib import Path
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from typing import List, Literal, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
 from app.auth import get_current_user, get_current_organizador_or_admin
+from app.services import access
+from app.services.activity_service import submission_to_out
 
 router = APIRouter()
 
@@ -104,7 +106,6 @@ def get_grades(
             models.ActivitySubmission.user_id == u.id
         ).all()
         graded = [s for s in subs if s.grade is not None]
-        avg_grade = sum(s.grade for s in graded) / len(graded) if graded else None
 
         result.append(schemas.GradeRow(
             id=u.id,
@@ -120,6 +121,62 @@ def get_grades(
             nodes_total=total_nodes_map.get(u.id, 0),
             activities_submitted=len(subs),
             activities_graded=len(graded),
-            avg_activity_grade=avg_grade,
         ))
     return result
+
+
+# ── Corrections queue ─────────────────────────────────────────────────────────
+
+@router.get("/submissions", response_model=List[schemas.ActivitySubmissionOut])
+def list_submissions(
+    status: Literal["pending", "graded", "all"] = "all",
+    user_type: Literal["trainee", "membro", "all"] = "all",
+    eixo: Optional[str] = None,
+    activity_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_organizador_or_admin),
+):
+    """Every delivery in one queue, pending first, so nothing waits unnoticed.
+
+    The axis filter uses the set the role may *manage*, not the one it may see: an
+    organizer sees the "all" axis but cannot correct in it, and listing those rows
+    would fill the queue with lines they cannot save.
+    """
+    if eixo is not None and eixo not in access.CONTENT_EIXOS:
+        raise HTTPException(status_code=422, detail="Eixo de conteúdo inválido.")
+
+    query = db.query(models.ActivitySubmission, models.Activity, models.User).join(
+        models.Activity, models.Activity.id == models.ActivitySubmission.activity_id,
+    ).join(
+        models.User, models.User.id == models.ActivitySubmission.user_id,
+    )
+
+    manageable = access.manageable_eixos(current_user)
+    if manageable is not None:
+        query = query.filter(models.Activity.eixo.in_(manageable))
+    # Quem corrige não aparece na própria fila; o organizador só acompanha trainees.
+    visible_types = ["trainee"] if current_user.type == "organizador" else ["trainee", "membro"]
+    query = query.filter(models.User.type.in_(visible_types))
+
+    if status == "pending":
+        query = query.filter(models.ActivitySubmission.grade.is_(None))
+    elif status == "graded":
+        query = query.filter(models.ActivitySubmission.grade.isnot(None))
+    if user_type != "all":
+        query = query.filter(models.User.type == user_type)
+    if eixo is not None:
+        query = query.filter(models.Activity.eixo == eixo)
+    if activity_id is not None:
+        query = query.filter(models.ActivitySubmission.activity_id == activity_id)
+    if user_id is not None:
+        query = query.filter(models.ActivitySubmission.user_id == user_id)
+
+    rows = query.order_by(
+        models.ActivitySubmission.grade.is_(None).desc(),
+        models.ActivitySubmission.submitted_at.desc(),
+    ).limit(limit).offset(offset).all()
+    return [submission_to_out(submission, user=user, activity=activity)
+            for submission, activity, user in rows]

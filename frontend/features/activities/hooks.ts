@@ -2,13 +2,14 @@
 
 // features/activities/hooks.ts — Custom hooks for activity state management
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { activitiesApi } from "./api"
 import type {
   Activity,
   ActivityCreatePayload,
   ActivityUpdatePayload,
   ActivitySubmissionOut,
+  SubmissionQueueFilters,
 } from "./types"
 
 export function useActivities() {
@@ -75,11 +76,13 @@ export function useActivities() {
   const submitActivity = async (
     activityId: string,
     fileUrl: string | null,
-    comment: string
+    comment: string,
+    nodeId?: string
   ) => {
     const result = await activitiesApi.submit(activityId, {
       file_url: fileUrl || null,
       comment: comment || "",
+      node_id: nodeId,
     })
     await refresh()
     return result
@@ -119,4 +122,44 @@ export function useActivities() {
     submitActivity,
     gradeSubmission,
   }
+}
+
+/** Fila de correção: carrega sozinha, ao contrário da listagem por atividade. */
+export function useSubmissionQueue() {
+  const pageSize = 50
+  const [items, setItems] = useState<ActivitySubmissionOut[]>([])
+  const [filters, setFilterState] = useState<SubmissionQueueFilters>({ status: "pending", offset: 0 })
+  const [hasMore, setHasMore] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const requestVersion = useRef(0)
+
+  const refresh = useCallback(async () => {
+    const version = ++requestVersion.current
+    setLoading(true)
+    setError("")
+    try {
+      const rows = await activitiesApi.listQueue({ ...filters, limit: pageSize + 1 })
+      if (version !== requestVersion.current) return
+      setItems(rows.slice(0, pageSize))
+      setHasMore(rows.length > pageSize)
+    } catch (cause) {
+      if (version === requestVersion.current) setError(cause instanceof Error ? cause.message : "Não foi possível carregar os envios.")
+    } finally {
+      if (version === requestVersion.current) setLoading(false)
+    }
+  }, [filters])
+
+  useEffect(() => { void refresh(); return () => { requestVersion.current++ } }, [refresh])
+
+  const setFilters = (next: SubmissionQueueFilters) => setFilterState({ ...next, offset: 0 })
+  const setPage = (offset: number) => setFilterState(previous => ({ ...previous, offset: Math.max(0, offset) }))
+  const grade = async (activityId: string, submissionId: string, value: number, feedback: string) => {
+    const updated = await activitiesApi.gradeSubmission(activityId, submissionId, { grade: value, feedback })
+    // Reload the current filter: a newly corrected delivery leaves the pending queue.
+    setFilterState(previous => ({ ...previous }))
+    return updated
+  }
+
+  return { items, filters, setFilters, setPage, pageSize, hasMore, loading, error, refresh, grade }
 }

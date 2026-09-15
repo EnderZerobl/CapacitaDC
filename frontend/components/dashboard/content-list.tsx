@@ -15,8 +15,8 @@ import { Plus, Search, Edit2, Trash } from "lucide-react"
 
 interface ContentListProps {
   contents: ContentItem[]
-  onUpdateContent: (content: ContentItem) => void
-  onAddContent: (content: ContentItem) => void
+  onUpdateContent: (content: ContentItem) => Promise<void>
+  onAddContent: (content: ContentItem) => Promise<void>
   onDeleteContent: (id: string) => void
   userType?: string
 }
@@ -56,14 +56,12 @@ export function ContentList({
     setIsAdding(true)
   }
 
-  const handleSave = (content: ContentItem) => {
+  const handleSave = async (content: ContentItem) => {
     if (isAdding) {
-      onAddContent(content)
+      await onAddContent(content)
     } else {
-      onUpdateContent(content)
+      await onUpdateContent(content)
     }
-    setEditingContent(null)
-    setIsAdding(false)
   }
 
   const handleClose = () => {

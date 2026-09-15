@@ -4,7 +4,7 @@
 
 import { useState, useCallback, useEffect } from "react"
 import { nodesApi } from "./api"
-import type { TrainingNode, NodeReleasePayload, NodeOrderPayload } from "./types"
+import type { TrainingNode, NodeReleasePayload, GameAnswer } from "./types"
 
 /** Converts a UTC ISO string (possibly naive, without 'Z') to local "YYYY-MM-DDTHH:mm" format */
 export function utcToLocalInput(utcIso: string): string {
@@ -32,6 +32,7 @@ export function useNodes() {
       setLoading(true)
       const data = await nodesApi.list()
       setNodes(data)
+      setError(null)
       const initial: Record<string, { isReleased: boolean; scheduledDate: string }> = {}
       data.forEach((n) => {
         initial[n.id] = {
@@ -152,8 +153,8 @@ export function useNodes() {
     return result
   }
 
-  const submitGame = async (nodeId: string, score: number) => {
-    const result = await nodesApi.submitGame(nodeId, { score })
+  const submitGame = async (nodeId: string, answers: GameAnswer[]) => {
+    const result = await nodesApi.submitGame(nodeId, { answers })
     await refresh()
     return result
   }

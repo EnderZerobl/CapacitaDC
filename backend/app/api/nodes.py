@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
 from app.auth import get_current_user, get_current_organizador_or_admin
-from app.services import node_service
+from app.services import node_service, access
+from app.services.game_service import revision_for_node
 
 router = APIRouter()
 
@@ -31,19 +32,45 @@ def create_training_node(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_organizador_or_admin),
 ):
+    access.ensure_node_eixo_access(current_user, node_in.eixo)
     node_name = (node_in.name or "").strip()
     activity_id = node_in.activity_id or (
         node_in.reference_id if node_in.type == "activity" else None
     )
     reference_id = node_in.reference_id if node_in.type == "material" else None
 
+    revision = None
+    if node_in.game_revision_id:
+        revision = revision_for_node(db, node_in.game_revision_id, node_in.eixo, current_user)
+
     act = None
     if activity_id:
         act = db.query(models.Activity).filter(models.Activity.id == activity_id).first()
+        if not act:
+            raise HTTPException(status_code=404, detail="Atividade não encontrada")
+        access.ensure_activity_access(current_user, act, manage=True)
+        if act.eixo not in {node_in.eixo, "all"}:
+            raise HTTPException(status_code=400, detail="A atividade deve pertencer ao eixo da etapa")
+    if reference_id:
+        material = db.query(models.Material).filter(models.Material.id == reference_id).first()
+        if not material:
+            raise HTTPException(status_code=404, detail="Material não encontrado")
+        access.ensure_material_access(current_user, material, manage=True)
+        if material.eixo != node_in.eixo:
+            raise HTTPException(status_code=400, detail="O material deve pertencer ao eixo da etapa")
+    if node_in.prerequisite_node_id:
+        prerequisite = db.query(models.TrainingNode).filter(models.TrainingNode.id == node_in.prerequisite_node_id).first()
+        if not prerequisite:
+            raise HTTPException(status_code=404, detail="Pré-requisito não encontrado")
+        access.ensure_node_access(db, prerequisite, current_user)
+        if prerequisite.eixo != node_in.eixo:
+            raise HTTPException(status_code=400, detail="O pré-requisito deve pertencer ao eixo da etapa")
 
     if not node_name:
         if act:
             node_name = act.title
+        elif revision:
+            node_name = revision.title
         elif node_in.type == "material" and reference_id:
             mat = db.query(models.Material).filter(
                 models.Material.id == reference_id
@@ -64,6 +91,7 @@ def create_training_node(
         eixo=node_in.eixo,
         activity_id=activity_id,
         reference_id=reference_id,
+        game_revision_id=node_in.game_revision_id,
         deadline=node_in.deadline,
         prerequisite_node_id=node_in.prerequisite_node_id,
         is_released=node_in.is_released,
@@ -94,26 +122,7 @@ def create_training_node(
     db.commit()
     db.refresh(new_node)
 
-    return schemas.TrainingNodeGraphOut(
-        id=new_node.id,
-        name=new_node.name,
-        type=new_node.type,
-        reference_id=new_node.reference_id,
-        activity_id=new_node.activity_id,
-        eixo=new_node.eixo,
-        prerequisite_node_id=new_node.prerequisite_node_id,
-        x_pos=new_node.x_pos,
-        y_pos=new_node.y_pos,
-        order_index=new_node.order_index,
-        questions=new_node.questions,
-        completed=False,
-        unlocked=True,
-        user_score=0,
-        is_released=new_node.is_released,
-        released_at=new_node.released_at,
-        deadline=new_node.deadline,
-        released_by=new_node.released_by,
-    )
+    return node_service.node_to_out(new_node)
 
 
 @router.delete("/{node_id}")
@@ -125,6 +134,7 @@ def delete_training_node(
     node = db.query(models.TrainingNode).filter(models.TrainingNode.id == node_id).first()
     if not node:
         raise HTTPException(status_code=404, detail="Nó não encontrado")
+    access.ensure_node_eixo_access(current_user, node.eixo)
     db.delete(node)
     db.commit()
     return {"detail": "Nó excluído com sucesso"}
@@ -141,6 +151,7 @@ def release_node(
     if not node:
         raise HTTPException(status_code=404, detail="Nó não encontrado")
 
+    access.ensure_node_eixo_access(current_user, node.eixo)
     node.is_released = release_data.is_released
     node.released_at = release_data.released_at
     node.released_by = current_user.id if release_data.is_released else None
@@ -148,24 +159,7 @@ def release_node(
     db.commit()
     db.refresh(node)
 
-    return schemas.TrainingNodeGraphOut(
-        id=node.id,
-        name=node.name,
-        type=node.type,
-        reference_id=node.reference_id,
-        eixo=node.eixo,
-        prerequisite_node_id=node.prerequisite_node_id,
-        x_pos=node.x_pos,
-        y_pos=node.y_pos,
-        order_index=node.order_index,
-        questions=node.questions,
-        completed=False,
-        unlocked=True,
-        user_score=0,
-        is_released=node.is_released,
-        released_at=node.released_at,
-        released_by=node.released_by,
-    )
+    return node_service.node_to_out(node)
 
 
 @router.post("/{node_id}/complete")
@@ -174,27 +168,15 @@ def complete_material_node(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    if current_user.type not in {"membro", "trainee"}:
+        raise HTTPException(status_code=403, detail="Somente membros e trainees registram progresso na trilha.")
     node = db.query(models.TrainingNode).filter(models.TrainingNode.id == node_id).first()
     if not node:
         raise HTTPException(status_code=404, detail="Nó de treinamento não encontrado")
     if node.type != "material":
-        raise HTTPException(status_code=400, detail="Este nó é um jogo, use o endpoint submit-game")
+        raise HTTPException(status_code=400, detail="Esta rota conclui apenas materiais; entregue a atividade ou responda o jogo")
 
-    is_privileged = current_user.type in ["admin", "organizador"]
-
-    if node.prerequisite_node_id and not is_privileged:
-        prereq = db.query(models.UserNodeProgress).filter(
-            models.UserNodeProgress.user_id == current_user.id,
-            models.UserNodeProgress.node_id == node.prerequisite_node_id,
-            models.UserNodeProgress.completed == True,
-        ).first()
-        if not prereq:
-            raise HTTPException(
-                status_code=400, detail="Você precisa concluir o pré-requisito antes."
-            )
-
-    if not is_privileged and not node_service.is_effectively_released(node):
-        raise HTTPException(status_code=403, detail="Este nó ainda não foi liberado.")
+    access.ensure_node_access(db, node, current_user, require_unlocked=True)
 
     return node_service.complete_material_node(db, node, current_user)
 
@@ -206,29 +188,19 @@ def submit_game_score(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    if current_user.type not in {"membro", "trainee"}:
+        raise HTTPException(status_code=403, detail="Use a pré-visualização para testar jogos sem alterar o progresso.")
     node = db.query(models.TrainingNode).filter(models.TrainingNode.id == node_id).first()
     if not node:
         raise HTTPException(status_code=404, detail="Nó de treinamento não encontrado")
     if node.type != "game":
         raise HTTPException(status_code=400, detail="Este nó não é um jogo")
+    if node.game_revision_id:
+        raise HTTPException(status_code=400, detail="Inicie uma tentativa para responder este jogo da biblioteca")
 
-    is_privileged = current_user.type in ["admin", "organizador"]
+    access.ensure_node_access(db, node, current_user, require_unlocked=True)
 
-    if node.prerequisite_node_id and not is_privileged:
-        prereq = db.query(models.UserNodeProgress).filter(
-            models.UserNodeProgress.user_id == current_user.id,
-            models.UserNodeProgress.node_id == node.prerequisite_node_id,
-            models.UserNodeProgress.completed == True,
-        ).first()
-        if not prereq:
-            raise HTTPException(
-                status_code=400, detail="Você precisa concluir o pré-requisito antes."
-            )
-
-    if not is_privileged and not node_service.is_effectively_released(node):
-        raise HTTPException(status_code=403, detail="Este nó ainda não foi liberado.")
-
-    return node_service.submit_game_score(db, node, current_user, submit_req.score)
+    return node_service.submit_game_score(db, node, current_user, submit_req.answers)
 
 
 @router.patch("/{node_id}/order", response_model=schemas.TrainingNodeGraphOut)
@@ -241,24 +213,8 @@ def update_node_order(
     node = db.query(models.TrainingNode).filter(models.TrainingNode.id == node_id).first()
     if not node:
         raise HTTPException(status_code=404, detail="Nó não encontrado")
+    access.ensure_node_eixo_access(current_user, node.eixo)
     node.order_index = order_data.order_index
     db.commit()
     db.refresh(node)
-    return schemas.TrainingNodeGraphOut(
-        id=node.id,
-        name=node.name,
-        type=node.type,
-        reference_id=node.reference_id,
-        eixo=node.eixo,
-        prerequisite_node_id=node.prerequisite_node_id,
-        x_pos=node.x_pos,
-        y_pos=node.y_pos,
-        order_index=node.order_index,
-        questions=node.questions,
-        completed=False,
-        unlocked=True,
-        user_score=0,
-        is_released=node.is_released,
-        released_at=node.released_at,
-        released_by=node.released_by,
-    )
+    return node_service.node_to_out(node)

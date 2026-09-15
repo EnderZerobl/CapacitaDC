@@ -1,191 +1,147 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { CheckCircle2, AlertCircle, ArrowRight, Star, MessageSquare } from "lucide-react"
-
-interface Option {
-  id: string
-  text: string
-  is_correct: boolean
-  score: number
-  feedback?: string
-}
-
-interface Question {
-  id: string
-  text: string
-  explanation?: string
-  options: Option[]
-}
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, Star } from "lucide-react"
+import type { GameAnswer, GameResult, Question } from "@/features/nodes/types"
 
 interface SpinGameProps {
   nodeName: string
-  questions: Question[]
-  onComplete: (score: number) => void
+  questions?: Question[]
+  onComplete: (answers: GameAnswer[]) => Promise<GameResult>
   onClose: () => void
 }
 
-export function SpinGame({ nodeName, questions, onComplete, onClose }: SpinGameProps) {
+export function SpinGame({ nodeName, questions = [], onComplete, onClose }: SpinGameProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [selectedOption, setSelectedOption] = useState<Option | null>(null)
-  const [totalScore, setTotalScore] = useState(0)
-  const [isFinished, setIsFinished] = useState(false)
-
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [result, setResult] = useState<GameResult | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const submissionPending = useRef(false)
   const currentQuestion = questions[currentIndex]
-  const progressPercent = (currentIndex / questions.length) * 100
 
-  const handleOptionSelect = (option: Option) => {
-    if (selectedOption) return // prevent double clicking/multiple selections
-    setSelectedOption(option)
-    setTotalScore((prev) => prev + option.score)
-  }
-
-  const handleNext = () => {
-    setSelectedOption(null)
-    if (currentIndex + 1 < questions.length) {
-      setCurrentIndex((prev) => prev + 1)
-    } else {
-      setIsFinished(true)
+  const handleSubmit = async () => {
+    if (submissionPending.current || questions.some(question => !answers[question.id])) return
+    submissionPending.current = true
+    setIsSubmitting(true)
+    setError(null)
+    try {
+      const response = await onComplete(questions.map(question => ({
+        question_id: question.id,
+        option_id: answers[question.id],
+      })))
+      setResult(response)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível enviar as respostas. Tente novamente.")
+    } finally {
+      submissionPending.current = false
+      setIsSubmitting(false)
     }
   }
 
-  if (isFinished) {
-    const maxPossibleScore = questions.length * 100
-    const scorePercentage = (totalScore / maxPossibleScore) * 100
-
+  if (!currentQuestion) {
     return (
-      <Card className="w-full max-w-xl mx-auto border-2 border-primary/20 shadow-2xl bg-card overflow-hidden animate-in fade-in zoom-in duration-300">
-        <div className="bg-gradient-to-r from-primary/10 via-accent/10 to-primary/10 p-6 text-center border-b border-border">
-          <Star className="w-16 h-16 mx-auto text-yellow-500 animate-bounce mb-2" />
-          <CardTitle className="text-2xl font-bold">Jogo Concluído!</CardTitle>
-          <p className="text-muted-foreground mt-1">{nodeName}</p>
-        </div>
-        <CardContent className="p-6 flex flex-col items-center space-y-6">
-          <div className="text-center">
-            <span className="text-sm font-semibold text-muted-foreground uppercase tracking-widest">Sua Pontuação</span>
-            <div className="text-5xl font-extrabold text-primary mt-2">
-              {totalScore} <span className="text-xl text-muted-foreground font-normal">/ {maxPossibleScore} pts</span>
-            </div>
-            <Badge variant={scorePercentage >= 70 ? "default" : "secondary"} className="mt-2 text-sm px-3 py-1">
-              {scorePercentage >= 90
-                ? "🏆 Mestre das Vendas!"
-                : scorePercentage >= 70
-                ? "👏 Excelente Desempenho!"
-                : "📚 Continue Praticando!"}
-            </Badge>
-          </div>
-
-          <div className="w-full bg-muted p-4 rounded-xl text-sm text-center">
-            Pratique mais para consolidar as etapas do <strong>SPIN Selling</strong> e obter a pontuação máxima no ranking cumulativo!
-          </div>
-
-          <div className="flex w-full space-x-4">
-            <Button variant="outline" className="flex-1" onClick={onClose}>
-              Voltar à Trilha
-            </Button>
-            <Button className="flex-1" onClick={() => onComplete(totalScore)}>
-              Registrar Pontos
-            </Button>
-          </div>
+      <Card>
+        <CardHeader><CardTitle>{nodeName}</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">Este jogo ainda não possui perguntas disponíveis.</p>
+          <Button variant="outline" onClick={onClose}>Voltar à trilha</Button>
         </CardContent>
       </Card>
     )
   }
 
-  return (
-    <Card className="w-full max-w-xl mx-auto border-2 border-primary/20 shadow-2xl bg-card overflow-hidden">
-      {/* Header */}
-      <CardHeader className="bg-gradient-to-b from-muted/50 to-card p-6 border-b border-border">
-        <div className="flex justify-between items-center mb-2">
-          <Badge variant="outline" className="text-xs uppercase tracking-wider font-semibold">
-            Pergunta {currentIndex + 1} de {questions.length}
-          </Badge>
-          <span className="text-xs font-bold text-muted-foreground">Pontos: {totalScore}</span>
-        </div>
-        <Progress value={progressPercent} className="h-2 rounded-full" />
-      </CardHeader>
-
-      {/* Main Content */}
-      <CardContent className="p-6 space-y-6">
-        {/* Chat Customer Node */}
-        <div className="flex items-start space-x-3">
-          <div className="bg-primary/10 text-primary p-2.5 rounded-xl border border-primary/20">
-            <MessageSquare className="w-5 h-5" />
+  if (result) {
+    const scorePercentage = result.max_score > 0 ? result.attempt_score / result.max_score * 100 : 0
+    return (
+      <Card className="w-full max-w-xl mx-auto border-primary/20">
+        <CardHeader className="text-center">
+          <Star className="w-12 h-12 mx-auto text-yellow-500" />
+          <CardTitle>Jogo concluído!</CardTitle>
+          <p className="text-sm text-muted-foreground">{nodeName}</p>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground">Pontuação desta tentativa</p>
+            <p className="text-4xl font-bold text-primary mt-2">
+              {result.attempt_score} <span className="text-lg text-muted-foreground">/ {result.max_score} pts</span>
+            </p>
+            <Badge variant={scorePercentage >= 70 ? "default" : "secondary"} className="mt-3">
+              {scorePercentage >= 90 ? "Ótimo desempenho!" : scorePercentage >= 70 ? "Bom desempenho!" : "Continue praticando!"}
+            </Badge>
+            <p className="text-sm text-muted-foreground mt-3">
+              {result.score_added > 0 ? `${result.score_added} pontos adicionados ao seu total.` : "Seu progresso foi registrado. Esta tentativa não acrescentou pontos ao seu total."}
+            </p>
           </div>
-          <div className="bg-muted p-4 rounded-2xl rounded-tl-none border border-border text-sm flex-1">
-            <p className="font-semibold text-xs text-primary mb-1">Cliente / Prospect</p>
-            <p className="text-foreground leading-relaxed font-medium">{currentQuestion.text}</p>
-          </div>
-        </div>
-
-        {/* Options */}
-        <div className="space-y-3">
-          {currentQuestion.options.map((option) => {
-            const isSelected = selectedOption?.id === option.id
-            const isChoiceCorrect = option.is_correct
-            const isAnySelected = selectedOption !== null
-
-            let btnVariant: "outline" | "default" | "destructive" = "outline"
-            if (isSelected) {
-              btnVariant = isChoiceCorrect ? "default" : "destructive"
-            }
-
-            return (
-              <Button
-                key={option.id}
-                variant={btnVariant}
-                disabled={isAnySelected}
-                onClick={() => handleOptionSelect(option)}
-                className={`w-full justify-start text-left py-4 px-4 h-auto text-sm leading-relaxed border transition-all duration-200 hover:scale-[1.01] ${
-                  isAnySelected && !isSelected && "opacity-60"
-                } ${isSelected && isChoiceCorrect && "bg-emerald-600 hover:bg-emerald-600 border-emerald-500 text-white"} ${
-                  isSelected && !isChoiceCorrect && "bg-rose-600 hover:bg-rose-600 border-rose-500 text-white"
-                }`}
-              >
-                <div className="flex justify-between items-center w-full">
-                  <span>{option.text}</span>
-                  {isSelected && (isChoiceCorrect ? <CheckCircle2 className="w-5 h-5 ml-2" /> : <AlertCircle className="w-5 h-5 ml-2" />)}
+          <div className="space-y-3">
+            {result.feedback.map((item, index) => {
+              const question = questions.find(question => question.id === item.question_id)
+              const option = question?.options.find(option => option.id === item.option_id)
+              return (
+                <div key={item.question_id} className="rounded-xl border border-border bg-muted/50 p-4 space-y-2 text-sm">
+                  <p className="font-semibold">{index + 1}. {question?.text}</p>
+                  <p className="text-muted-foreground">Sua resposta: {option?.text}</p>
+                  <p className="flex items-center gap-2 font-medium">
+                    {item.is_correct ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <AlertCircle className="h-4 w-4 text-amber-500" />}
+                    {item.is_correct ? "Resposta correta" : "Revise esta resposta"} · {item.score} pts
+                  </p>
+                  {item.feedback && <p>{item.feedback}</p>}
+                  {item.explanation && item.explanation !== item.feedback && <p className="text-muted-foreground">{item.explanation}</p>}
                 </div>
-              </Button>
-            )
-          })}
-        </div>
-
-        {/* Feedback box */}
-        {selectedOption && (
-          <div
-            className={`p-4 rounded-xl border animate-in slide-in-from-bottom duration-300 text-sm ${
-              selectedOption.is_correct
-                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300"
-                : "bg-rose-500/10 border-rose-500/20 text-rose-800 dark:text-rose-300"
-            }`}
-          >
-            <div className="flex items-center space-x-2 font-bold mb-1">
-              {selectedOption.is_correct ? (
-                <>
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Muito bom! (+{selectedOption.score} pts)</span>
-                </>
-              ) : (
-                <>
-                  <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400" />
-                  <span>Eficácia Parcial (+{selectedOption.score} pts)</span>
-                </>
-              )}
-            </div>
-            <p className="leading-relaxed text-xs">{selectedOption.feedback || currentQuestion.explanation}</p>
-
-            <div className="flex justify-end mt-4">
-              <Button size="sm" onClick={handleNext} className="bg-primary hover:bg-primary/90 text-white">
-                Avançar <ArrowRight className="w-4 h-4 ml-1" />
-              </Button>
-            </div>
+              )
+            })}
           </div>
-        )}
+          <Button className="w-full" onClick={onClose}>Voltar à trilha</Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const selectedOptionId = answers[currentQuestion.id]
+  return (
+    <Card className="w-full max-w-xl mx-auto border-primary/20">
+      <CardHeader className="space-y-4">
+        <CardTitle>{nodeName}</CardTitle>
+        <Badge variant="outline" className="w-fit">Pergunta {currentIndex + 1} de {questions.length}</Badge>
+        <Progress value={Object.keys(answers).length / questions.length * 100} aria-label="Perguntas respondidas" />
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <p id="game-question" className="font-semibold whitespace-pre-line">{currentQuestion.text}</p>
+        <div role="group" aria-labelledby="game-question" className="space-y-3">
+          {currentQuestion.options.map(option => (
+            <Button
+              key={option.id}
+              variant={selectedOptionId === option.id ? "default" : "outline"}
+              aria-pressed={selectedOptionId === option.id}
+              disabled={isSubmitting}
+              onClick={() => setAnswers(previous => ({ ...previous, [currentQuestion.id]: option.id }))}
+              className="w-full h-auto justify-start whitespace-normal text-left py-4"
+            >
+              {option.text}
+            </Button>
+          ))}
+        </div>
+        {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+        <div className="flex justify-between gap-3">
+          <Button variant="outline" disabled={isSubmitting || currentIndex === 0} onClick={() => setCurrentIndex(index => index - 1)}>
+            <ArrowLeft className="mr-1 h-4 w-4" /> Anterior
+          </Button>
+          {currentIndex < questions.length - 1 ? (
+            <Button disabled={!selectedOptionId} onClick={() => setCurrentIndex(index => index + 1)}>
+              Próxima <ArrowRight className="ml-1 h-4 w-4" />
+            </Button>
+          ) : (
+            <Button disabled={isSubmitting || questions.some(question => !answers[question.id])} onClick={handleSubmit}>
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isSubmitting ? "Enviando..." : "Concluir e ver resultado"}
+            </Button>
+          )}
+        </div>
       </CardContent>
     </Card>
   )

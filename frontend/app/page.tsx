@@ -1,12 +1,19 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Link from "next/link"
+import { gamesApi } from "@/features/games/api"
+import { gameFormatLabels } from "@/features/games/drafts"
+import type { Game } from "@/features/games/types"
+import { apiClient } from "@/lib/api-client"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { UsersSection } from "@/components/dashboard/users-section"
 import { MemberForm } from "@/components/dashboard/member-form"
 import { ContentList } from "@/components/dashboard/content-list"
 import { ContentItem } from "@/components/dashboard/content-card"
+import { CorrectionsQueue } from "@/components/dashboard/corrections-queue"
+import { CorrectionRow } from "@/components/dashboard/correction-row"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +23,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import {
   Users, FileQuestion, LogOut, User, Shield, Compass, Lock, Unlock,
-  Calendar, BookOpen, Gamepad2, Clock, CheckCircle2, ClipboardList,
+  Calendar, BookOpen, Gamepad2, Clock, CheckCircle2, ClipboardCheck, ClipboardList,
   Plus, ChevronDown, ChevronUp, Trash2, ExternalLink, Link2, Upload,
   XCircle, Award, Calculator, Scale, Pencil,
 } from "lucide-react"
@@ -35,7 +42,7 @@ export default function Dashboard() {
   const { materials, createMaterial, updateMaterial, deleteMaterial } = useMaterials()
   const contents: ContentItem[] = materials as unknown as ContentItem[]
 
-  const { members, trainees, grades, createUser, updateUser, deleteUser, updateTrainee } = useUsers()
+  const { members, trainees, grades, refresh: refreshUsers, createUser, updateUser, deleteUser, updateTrainee } = useUsers()
 
   const { nodes, nodeReleaseState, setNodeReleaseState, updateReleaseLocal, saveNodeRelease, moveNode, deleteNode, refresh: refreshNodes } = useNodes()
 
@@ -55,10 +62,16 @@ export default function Dashboard() {
   const [newActivityForm, setNewActivityForm] = useState({
     title: "", description: "", eixo: "trainee", accepts_file: true, deadline: "", material_id: "", weight: 1,
   })
-  const [gradeInputs, setGradeInputs] = useState<Record<string, { grade: string; feedback: string }>>({})
-  const [activityWeights, setActivityWeights] = useState<Record<string, number>>({})
-  const [weightedApplying, setWeightedApplying] = useState<string | null>(null)
   const [showNodeForm, setShowNodeForm] = useState(false)
+  const [games, setGames] = useState<Game[]>([])
+  const [gameRevisionId, setGameRevisionId] = useState("")
+  const [prerequisiteId, setPrerequisiteId] = useState("")
+  const [nodeError, setNodeError] = useState("")
+  const [creatingNode, setCreatingNode] = useState(false)
+  useEffect(() => {
+    if (!showNodeForm || !user || !["admin", "organizador"].includes(user.type)) return
+    gamesApi.list().then(setGames).catch(error => setNodeError(error.message))
+  }, [showNodeForm, user?.id])
   const [nodeForm, setNodeForm] = useState({
     name: "", type: "activity" as "activity" | "material" | "game", eixo: "trainee",
     activity_id: "", reference_id: "", deadline: "", is_released: false,
@@ -75,23 +88,19 @@ export default function Dashboard() {
   }, [user, isLoading, router])
 
   const handleUpdateContent = async (updated: ContentItem) => {
-    try {
-      await updateMaterial(updated.id, {
-        name: updated.name, type: updated.type, eixo: updated.eixo, text: updated.text || "",
-        documents: (updated.documents || []).map((d: any) => ({ name: d.name, url: d.url })),
-        videos: updated.videos || [],
-      })
-    } catch (e: any) { alert(e.message || "Erro ao atualizar material") }
+    await updateMaterial(updated.id, {
+      name: updated.name, type: updated.type, eixo: updated.eixo, text: updated.text || "",
+      documents: (updated.documents || []).map((d: any) => ({ name: d.name, url: d.url })),
+      videos: updated.videos || [],
+    })
   }
 
   const handleAddContent = async (newContent: ContentItem) => {
-    try {
-      await createMaterial({
-        name: newContent.name, type: newContent.type, eixo: newContent.eixo, text: newContent.text || "",
-        documents: (newContent.documents || []).map((d: any) => ({ name: d.name, url: d.url })),
-        videos: newContent.videos || [],
-      })
-    } catch (e: any) { alert(e.message || "Erro ao adicionar material") }
+    await createMaterial({
+      name: newContent.name, type: newContent.type, eixo: newContent.eixo, text: newContent.text || "",
+      documents: (newContent.documents || []).map((d: any) => ({ name: d.name, url: d.url })),
+      videos: newContent.videos || [],
+    })
   }
 
   const handleDeleteContent = async (id: string) => {
@@ -107,13 +116,11 @@ export default function Dashboard() {
     if (data.cargo === "trainee") userType = "trainee"
     else if (data.cargo === "admin") userType = "admin"
     else if (data.cargo === "organizador") userType = "organizador"
-    try {
-      await createUser({ name: data.name, email: data.email, cargo: data.cargo, type: userType, eixo: data.eixo, password: data.password })
-    } catch (e: any) { alert(e.message || "Erro ao adicionar membro/trainee") }
+    await createUser({ name: data.name, email: data.email, cargo: data.cargo, type: userType, eixo: data.eixo, password: data.password })
   }
 
-  const handleUpdateTrainee = async (traineeId: string, data: { notaRotacao?: number; rotacao?: number }) => {
-    try { await updateTrainee(traineeId, { notaRotacao: data.notaRotacao, rotacao: data.rotacao }) }
+  const handleUpdateTrainee = async (traineeId: string, data: { rotacao?: number }) => {
+    try { await updateTrainee(traineeId, { rotacao: data.rotacao }) }
     catch (e: any) { alert(e.message || "Erro ao atualizar trainee") }
   }
 
@@ -126,6 +133,9 @@ export default function Dashboard() {
   }
 
   const handleCreateNode = async () => {
+    if (creatingNode) return
+    setCreatingNode(true)
+    setNodeError("")
     let deadlineIso: string | null = null
     if (nodeForm.deadline) { const d = new Date(nodeForm.deadline); if (!isNaN(d.getTime())) deadlineIso = d.toISOString() }
     const payload: any = {
@@ -133,21 +143,22 @@ export default function Dashboard() {
       activity_id: nodeForm.type === "activity" ? (nodeForm.activity_id || null) : null,
       reference_id: nodeForm.type === "material" ? (nodeForm.reference_id || null) : null,
       deadline: deadlineIso, is_released: nodeForm.is_released,
-      questions: nodeForm.type === "game" ? nodeForm.questions : [],
+      game_revision_id: nodeForm.type === "game" ? gameRevisionId : null,
+      prerequisite_node_id: prerequisiteId || null,
+      questions: [],
     }
     try {
-      const token = localStorage.getItem("token")
-      const res = await fetch("/api/nodes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-        body: JSON.stringify(payload),
-      })
-      if (res.ok) {
-        await refreshNodes()
-        setShowNodeForm(false)
-        setNodeForm({ name: "", type: "activity", eixo: "trainee", activity_id: "", reference_id: "", deadline: "", is_released: false, questions: [] })
-      } else { const err = await res.json(); alert(err.detail || "Erro ao criar nó") }
-    } catch (e: any) { alert("Erro ao criar nó: " + (e?.message || e)) }
+      await apiClient.post("/api/nodes", payload)
+      await refreshNodes()
+      setShowNodeForm(false)
+      setGameRevisionId("")
+      setPrerequisiteId("")
+      setNodeForm({ name: "", type: "activity", eixo: "trainee", activity_id: "", reference_id: "", deadline: "", is_released: false, questions: [] })
+    } catch (error) {
+      setNodeError(error instanceof Error ? error.message : "Erro ao criar etapa")
+    } finally {
+      setCreatingNode(false)
+    }
   }
 
   const handleDeleteNode = async (nodeId: string) => {
@@ -169,7 +180,7 @@ export default function Dashboard() {
         title: newActivityForm.title, description: newActivityForm.description,
         eixo: newActivityForm.eixo, accepts_file: newActivityForm.accepts_file,
         deadline: newActivityForm.deadline ? new Date(newActivityForm.deadline).toISOString() : null,
-        material_id: newActivityForm.material_id || null, weight: Number(newActivityForm.weight) || 1,
+        material_id: newActivityForm.material_id || null, weight: Number(newActivityForm.weight),
       })
       setNewActivityForm({ title: "", description: "", eixo: "trainee", accepts_file: true, deadline: "", material_id: "", weight: 1 })
       setShowActivityForm(false)
@@ -202,47 +213,22 @@ export default function Dashboard() {
         accepts_file: editActivityForm.accepts_file,
         deadline: editActivityForm.deadline ? new Date(editActivityForm.deadline).toISOString() : null,
         material_id: editActivityForm.material_id || null,
-        weight: Number(editActivityForm.weight) || 1,
+        weight: Number(editActivityForm.weight),
       })
       setEditActivityId(null)
+      await refreshUsers()
     } catch (e: any) { alert(e.message || "Erro ao salvar atividade") }
   }
 
   const handleDeleteActivity = async (activityId: string) => {
     if (!confirm("Tem certeza que deseja excluir esta atividade?")) return
-    try { await deleteActivity(activityId) } catch (e: any) { alert(e.message) }
+    try { await deleteActivity(activityId); await refreshUsers() } catch (e: any) { alert(e.message) }
   }
 
   const handleLoadSubmissions = async (activityId: string) => {
     try { await loadSubmissions(activityId) } catch (e: any) { console.error(e) }
   }
 
-  const handleGradeSubmission = async (activityId: string, submissionId: string) => {
-    const g = gradeInputs[submissionId] || { grade: "", feedback: "" }
-    const gradeNum = parseFloat(g.grade)
-    if (isNaN(gradeNum) || gradeNum < 0 || gradeNum > 10) { alert("Nota inválida. Use um valor entre 0 e 10."); return }
-    try { await gradeSubmission(activityId, submissionId, gradeNum, g.feedback) }
-    catch (e: any) { alert(e.message || "Erro ao avaliar") }
-  }
-
-  const computeWeightedAvg = (traineeId: string): number | null => {
-    const traineeActivities = activities.filter(a => a.eixo === "trainee" || a.eixo === "all")
-    let sumGW = 0, sumW = 0
-    for (const act of traineeActivities) {
-      const subs = activitySubmissions[act.id] || []
-      const sub = subs.find((s: any) => s.user_id === traineeId)
-      if (sub && sub.grade != null) { const w = activityWeights[act.id] ?? act.weight ?? 1; sumGW += sub.grade * w; sumW += w }
-    }
-    return sumW > 0 ? Math.round((sumGW / sumW) * 100) / 100 : null
-  }
-
-  const handleApplyWeightedGrade = async (traineeId: string) => {
-    const avg = computeWeightedAvg(traineeId)
-    if (avg === null) { alert("Nenhuma nota disponível para calcular."); return }
-    setWeightedApplying(traineeId)
-    await handleUpdateTrainee(traineeId, { notaRotacao: avg })
-    setWeightedApplying(null)
-  }
 
   const handleLogout = () => { logout(); router.push("/login") }
 
@@ -272,7 +258,7 @@ export default function Dashboard() {
 
   const eixoLabel: Record<string, string> = {
     trainee: "Trainee (Geral)", vendas: "Vendas", conexoes: "Conexões",
-    experiencia: "Experiência do Consumidor", pluginfo: "PlugInfo",
+    experiencia: "Experiência do Consumidor",
   }
 
   return (
@@ -334,6 +320,10 @@ export default function Dashboard() {
             <TabsTrigger value="atividades" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <ClipboardList className="h-4 w-4" />
               Atividades
+            </TabsTrigger>
+            <TabsTrigger value="correcoes" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <ClipboardCheck className="h-4 w-4" />
+              Correções
             </TabsTrigger>
             <TabsTrigger value="notas" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Award className="h-4 w-4" />
@@ -453,12 +443,13 @@ export default function Dashboard() {
                       </label>
                       <Input
                         type="number"
-                        min="0.1"
+                        min="0"
                         step="0.5"
                         value={newActivityForm.weight}
                         onChange={e => setNewActivityForm(p => ({ ...p, weight: Number(e.target.value) }))}
                         className="bg-secondary border-border text-xs h-9"
                       />
+                      <p className="text-xs text-muted-foreground">Peso 0: não vale nota na média. Peso maior: maior participação na média.</p>
                     </div>
                     <div className="flex items-center gap-3 pt-6">
                       <input
@@ -588,11 +579,12 @@ export default function Dashboard() {
                             <div className="space-y-1">
                               <label className="text-xs text-muted-foreground flex items-center gap-1"><Scale className="h-3 w-3" /> Peso</label>
                               <Input
-                                type="number" min="0.1" step="0.5"
+                                type="number" min="0" step="0.5"
                                 value={editActivityForm.weight}
                                 onChange={e => setEditActivityForm(p => ({ ...p, weight: Number(e.target.value) }))}
                                 className="bg-secondary border-border text-xs h-8"
                               />
+                      <p className="text-xs text-muted-foreground">Peso 0: não vale nota na média. Peso maior: maior participação na média.</p>
                             </div>
                             <div className="space-y-1">
                               <label className="text-xs text-muted-foreground">Material Relacionado</label>
@@ -639,51 +631,13 @@ export default function Dashboard() {
                             <p className="text-xs text-muted-foreground text-center py-4">Nenhuma submissão ainda.</p>
                           ) : (
                             <div className="space-y-3">
-                              {subs.map((sub: any) => {
-                                const gi = gradeInputs[sub.id] || { grade: sub.grade?.toString() || "", feedback: sub.feedback || "" }
-                                return (
-                                  <div key={sub.id} className="rounded-lg border border-border p-3 space-y-2">
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-xs font-semibold text-foreground">{sub.user_name}</span>
-                                      {sub.submitted_at && (
-                                        <span className="text-[10px] text-muted-foreground">
-                                          {new Date(sub.submitted_at).toLocaleString("pt-BR")}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {sub.file_url && (
-                                      <a href={sub.file_url} target="_blank" rel="noopener noreferrer"
-                                        className="text-xs text-primary flex items-center gap-1 hover:underline truncate">
-                                        <Link2 className="h-3 w-3" />{sub.file_url}
-                                      </a>
-                                    )}
-                                    {sub.comment && (
-                                      <p className="text-xs text-muted-foreground italic">{sub.comment}</p>
-                                    )}
-                                    <div className="flex items-center gap-2">
-                                      <Input
-                                        placeholder="Nota (0-10)"
-                                        value={gi.grade}
-                                        onChange={e => setGradeInputs(p => ({ ...p, [sub.id]: { ...gi, grade: e.target.value } }))}
-                                        className="bg-secondary border-border text-xs h-7 w-24"
-                                      />
-                                      <Input
-                                        placeholder="Feedback"
-                                        value={gi.feedback}
-                                        onChange={e => setGradeInputs(p => ({ ...p, [sub.id]: { ...gi, feedback: e.target.value } }))}
-                                        className="bg-secondary border-border text-xs h-7 flex-1"
-                                      />
-                                      <Button size="sm" className="h-7 text-xs px-3"
-                                        onClick={() => handleGradeSubmission(act.id, sub.id)}>
-                                        Salvar
-                                      </Button>
-                                    </div>
-                                    {sub.grade !== null && sub.grade !== undefined && (
-                                      <p className="text-xs text-emerald-400 font-semibold">Nota atual: {sub.grade.toFixed(1)}</p>
-                                    )}
-                                  </div>
-                                )
-                              })}
+                              {subs.map((sub: any) => (
+                                <CorrectionRow key={sub.id} submission={sub}
+                                  onGrade={async (grade, feedback) => {
+                                    await gradeSubmission(act.id, sub.id, grade, feedback)
+                                    await refreshUsers()
+                                  }} />
+                              ))}
                             </div>
                           )}
                         </div>
@@ -693,6 +647,17 @@ export default function Dashboard() {
                 )
               })}
             </div>
+          </TabsContent>
+
+          {/* Seção Correções — fila única de envios */}
+          <TabsContent value="correcoes" className="space-y-6">
+            <div className="space-y-1">
+              <h2 className="text-2xl font-bold text-foreground">Correções</h2>
+              <p className="text-muted-foreground text-sm">
+                Todos os envios em uma fila, pendentes primeiro. A nota entra na média ponderada da pessoa assim que você salva.
+              </p>
+            </div>
+            <CorrectionsQueue activities={activities} isOrganizer={isOrg} onGraded={() => { void refreshUsers() }} />
           </TabsContent>
 
           {/* Seção Notas */}
@@ -721,8 +686,7 @@ export default function Dashboard() {
                           <th className="text-left p-3 font-semibold text-muted-foreground">Nome</th>
                           <th className="text-center p-3 font-semibold text-muted-foreground">Trilha %</th>
                           <th className="text-center p-3 font-semibold text-muted-foreground">Atividades</th>
-                          <th className="text-center p-3 font-semibold text-muted-foreground">Média Atv.</th>
-                          <th className="text-center p-3 font-semibold text-muted-foreground">Nota Rotação</th>
+                          <th className="text-center p-3 font-semibold text-muted-foreground">Média Ponderada</th>
                           <th className="text-center p-3 font-semibold text-muted-foreground">Pontos</th>
                           <th className="p-3" />
                         </tr>
@@ -743,17 +707,9 @@ export default function Dashboard() {
                               {row.activities_graded}/{row.activities_submitted}
                             </td>
                             <td className="p-3 text-center">
-                              {row.avg_activity_grade != null
-                                ? <span className={row.avg_activity_grade >= 7 ? "text-emerald-400 font-semibold" : "text-rose-400 font-semibold"}>
-                                    {row.avg_activity_grade.toFixed(1)}
-                                  </span>
-                                : <span className="text-muted-foreground/40">—</span>
-                              }
-                            </td>
-                            <td className="p-3 text-center">
                               {row.nota_rotacao != null
                                 ? <span className={`font-bold ${row.nota_rotacao >= 7 ? "text-emerald-400" : row.nota_rotacao >= 5 ? "text-amber-400" : "text-rose-400"}`}>
-                                    {row.nota_rotacao.toFixed(1)}
+                                    {row.nota_rotacao.toFixed(2)}
                                   </span>
                                 : <span className="text-muted-foreground/40">—</span>
                               }
@@ -788,8 +744,7 @@ export default function Dashboard() {
                           <th className="text-left p-3 font-semibold text-muted-foreground">Eixo</th>
                           <th className="text-center p-3 font-semibold text-muted-foreground">Trilha %</th>
                           <th className="text-center p-3 font-semibold text-muted-foreground">Atividades</th>
-                          <th className="text-center p-3 font-semibold text-muted-foreground">Média Atv.</th>
-                          <th className="text-center p-3 font-semibold text-muted-foreground">Nota Rotação</th>
+                          <th className="text-center p-3 font-semibold text-muted-foreground">Média Ponderada</th>
                           <th className="text-center p-3 font-semibold text-muted-foreground">Pontos</th>
                           <th className="p-3" />
                         </tr>
@@ -809,13 +764,8 @@ export default function Dashboard() {
                             </td>
                             <td className="p-3 text-center text-muted-foreground">{row.activities_graded}/{row.activities_submitted}</td>
                             <td className="p-3 text-center">
-                              {row.avg_activity_grade != null
-                                ? <span className={`font-bold ${row.avg_activity_grade >= 7 ? "text-emerald-400" : "text-rose-400"}`}>{row.avg_activity_grade.toFixed(1)}</span>
-                                : <span className="text-muted-foreground/40">—</span>}
-                            </td>
-                            <td className="p-3 text-center">
                               {row.nota_rotacao != null
-                                ? <span className={`font-bold ${row.nota_rotacao >= 7 ? "text-emerald-400" : row.nota_rotacao >= 5 ? "text-amber-400" : "text-rose-400"}`}>{row.nota_rotacao.toFixed(1)}</span>
+                                ? <span className={`font-bold ${row.nota_rotacao >= 7 ? "text-emerald-400" : row.nota_rotacao >= 5 ? "text-amber-400" : "text-rose-400"}`}>{row.nota_rotacao.toFixed(2)}</span>
                                 : <span className="text-muted-foreground/40">—</span>}
                             </td>
                             <td className="p-3 text-center text-primary font-semibold">{row.pontos_acumulados}</td>
@@ -829,103 +779,6 @@ export default function Dashboard() {
                       </tbody>
                     </table>
                   </div>
-                </div>
-              )
-            })()}
-
-            {/* Calculadora de Média Ponderada */}
-            {(() => {
-              const traineeActivities = activities.filter(a => a.eixo === "trainee" || a.eixo === "all")
-              if (traineeActivities.length === 0) return null
-              const traineeGrades = grades.filter((g: any) => g.type === "trainee")
-              if (traineeGrades.length === 0) return null
-              return (
-                <div className="space-y-3 pt-4 border-t border-border">
-                  <div className="flex items-center gap-2">
-                    <Calculator className="h-4 w-4 text-primary" />
-                    <h3 className="text-base font-semibold text-foreground">Calculadora de Média Ponderada</h3>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Defina o peso de cada atividade. A média é calculada em tempo real:
-                    <span className="font-mono ml-1">Σ(nota × peso) ÷ Σ(pesos)</span>
-                  </p>
-                  {/* Pesos das atividades (definidos na criação) */}
-                  <div className="flex flex-wrap gap-3">
-                    {traineeActivities.map(act => (
-                      <div key={act.id} className="flex items-center gap-2 bg-secondary/50 border border-border rounded-lg px-3 py-2">
-                        <span className="text-xs text-foreground max-w-[120px] truncate">{act.title}</span>
-                        <div className="flex items-center gap-1 text-amber-400">
-                          <Scale className="h-3 w-3" />
-                          <span className="text-xs font-semibold">×{act.weight ?? 1}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {/* Tabela de trainees com média calculada */}
-                  <div className="rounded-xl border border-border overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-border bg-secondary/50">
-                          <th className="text-left p-3 font-semibold text-muted-foreground">Trainee</th>
-                          {traineeActivities.map(act => (
-                            <th key={act.id} className="text-center p-3 font-semibold text-muted-foreground max-w-[80px]">
-                              <span className="truncate block" title={act.title}>{act.title.slice(0,12)}{act.title.length>12?"…":""}</span>
-                              <span className="text-[9px] text-primary">(×{act.weight ?? 1})</span>
-                            </th>
-                          ))}
-                          <th className="text-center p-3 font-semibold text-primary">Média Pond.</th>
-                          <th className="p-3" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {traineeGrades.map((row: any) => {
-                          // Need submissions per trainee — load lazily from activitySubmissions
-                          let sumGW = 0, sumW = 0
-                          traineeActivities.forEach(act => {
-                            const subs = activitySubmissions[act.id] || []
-                            const sub = subs.find((s: any) => s.user_id === row.id)
-                            if (sub && sub.grade != null) {
-                              const w = act.weight ?? 1
-                              sumGW += sub.grade * w
-                              sumW += w
-                            }
-                          })
-                          const avg = sumW > 0 ? Math.round((sumGW / sumW) * 100) / 100 : null
-                          return (
-                            <tr key={row.id} className="border-b border-border/50 hover:bg-secondary/30">
-                              <td className="p-3 font-medium text-foreground">{row.name}</td>
-                              {traineeActivities.map(act => {
-                                const subs = activitySubmissions[act.id] || []
-                                const sub = subs.find((s: any) => s.user_id === row.id)
-                                return (
-                                  <td key={act.id} className="p-3 text-center">
-                                    {sub?.grade != null
-                                      ? <span className={sub.grade >= 7 ? "text-emerald-400 font-semibold" : "text-rose-400 font-semibold"}>{sub.grade.toFixed(1)}</span>
-                                      : <span className="text-muted-foreground/40">—</span>}
-                                  </td>
-                                )
-                              })}
-                              <td className="p-3 text-center">
-                                {avg != null
-                                  ? <span className={`font-bold ${avg >= 7 ? "text-emerald-400" : avg >= 5 ? "text-amber-400" : "text-rose-400"}`}>{avg.toFixed(2)}</span>
-                                  : <span className="text-muted-foreground/40">—</span>}
-                              </td>
-                              <td className="p-3 text-right">
-                                <Button size="sm" className="h-7 text-xs px-3"
-                                  disabled={avg === null || weightedApplying === row.id}
-                                  onClick={() => handleApplyWeightedGrade(row.id)}>
-                                  {weightedApplying === row.id ? "..." : "Aplicar"}
-                                </Button>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    💡 "Aplicar" salva a média ponderada como Nota de Rotação do trainee. As notas das atividades aparecem após expandir os envios na aba Atividades.
-                  </p>
                 </div>
               )
             })()}
@@ -955,6 +808,9 @@ export default function Dashboard() {
                 <h2 className="text-2xl font-bold text-foreground">Gerenciamento da Trilha</h2>
                 <p className="text-muted-foreground text-sm">Crie, libere ou bloqueie nós da trilha de capacitação.</p>
               </div>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/jogos"><Gamepad2 className="h-4 w-4 mr-2" />Biblioteca de jogos</Link>
+              </Button>
               <Button size="sm" className="gap-2" onClick={() => setShowNodeForm(v => !v)}>
                 <Plus className="h-4 w-4" />Novo Nó
               </Button>
@@ -972,17 +828,27 @@ export default function Dashboard() {
                         className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-xs text-foreground">
                         <option value="activity">Atividade</option>
                         <option value="material">Material (Somente Leitura)</option>
-                        <option value="game">Jogo (Quiz SPIN)</option>
+                        <option value="game">Jogo da biblioteca</option>
                       </select>
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground">Eixo</label>
-                      <select value={nodeForm.eixo}
-                        onChange={e => setNodeForm(p => ({ ...p, eixo: e.target.value }))}
-                        className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-xs text-foreground">
-                        <option value="trainee">Trainee</option>
-                        {!isOrg && (<><option value="vendas">Vendas</option><option value="conexoes">Conexões</option><option value="experiencia">Experiência</option></>)}
-                      </select>
+                      {isOrg ? (
+                        <Input value="Trainee" disabled className="bg-secondary border-border text-xs h-9" />
+                      ) : (
+                        <select value={nodeForm.eixo}
+                          onChange={e => {
+                            setNodeForm(p => ({ ...p, eixo: e.target.value, activity_id: "", reference_id: "" }))
+                            setGameRevisionId("")
+                            setPrerequisiteId("")
+                          }}
+                          className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-xs text-foreground">
+                          <option value="trainee">Trainee</option>
+                          <option value="vendas">Vendas</option>
+                          <option value="conexoes">Conexões</option>
+                          <option value="experiencia">Experiência</option>
+                        </select>
+                      )}
                     </div>
 
                     {nodeForm.type === "activity" && (
@@ -1020,7 +886,7 @@ export default function Dashboard() {
                           }}
                           className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-xs text-foreground">
                           <option value="">Selecione um material...</option>
-                          {contents.filter(c => c.type === (nodeForm.eixo === "trainee" ? "trainee" : "membro")).map(c => (
+                          {contents.filter(c => c.eixo === nodeForm.eixo).map(c => (
                             <option key={c.id} value={c.id}>{c.name}</option>
                           ))}
                         </select>
@@ -1029,7 +895,7 @@ export default function Dashboard() {
 
                     <div className="space-y-1 sm:col-span-2">
                       <label className="text-xs text-muted-foreground">Nome do Nó (opcional)</label>
-                      <Input placeholder="Se vazio, puxa o título da Atividade/Material selecionado" value={nodeForm.name}
+                      <Input placeholder="Se vazio, usa o título do conteúdo selecionado" value={nodeForm.name}
                         onChange={e => setNodeForm(p => ({ ...p, name: e.target.value }))}
                         className="bg-secondary border-border text-xs h-9" />
                     </div>
@@ -1044,65 +910,43 @@ export default function Dashboard() {
                     </div>
 
                     {nodeForm.type === "game" && (
-                      <div className="sm:col-span-2 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-muted-foreground">Perguntas do Quiz</label>
-                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() =>
-                            setNodeForm(p => ({ ...p, questions: [...p.questions, { text: "", explanation: "", options: [
-                              { text: "", is_correct: false, score: 0, feedback: "" },
-                              { text: "", is_correct: false, score: 100, feedback: "" },
-                            ]}] }))}>
-                            <Plus className="h-3 w-3" />Pergunta
-                          </Button>
-                        </div>
-                        {nodeForm.questions.map((q, qi) => (
-                          <div key={qi} className="border border-border rounded-lg p-3 space-y-2 bg-secondary/30">
-                            <div className="flex gap-2 items-center">
-                              <Input placeholder={`Pergunta ${qi+1}`} value={q.text} className="bg-background border-border text-xs h-8 flex-1"
-                                onChange={e => setNodeForm(p => { const qs=[...p.questions]; qs[qi]={...qs[qi],text:e.target.value}; return {...p,questions:qs} })} />
-                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-rose-400" onClick={() =>
-                                setNodeForm(p => { const qs=p.questions.filter((_,i)=>i!==qi); return {...p,questions:qs} })}>
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            </div>
-                            <Input placeholder="Explicação (opcional)" value={q.explanation} className="bg-background border-border text-xs h-7"
-                              onChange={e => setNodeForm(p => { const qs=[...p.questions]; qs[qi]={...qs[qi],explanation:e.target.value}; return {...p,questions:qs} })} />
-                            <div className="space-y-1.5 pl-2 border-l-2 border-primary/20">
-                              {q.options.map((o, oi) => (
-                                <div key={oi} className="flex gap-2 items-center">
-                                  <input type="checkbox" checked={o.is_correct} title="Correta?"
-                                    onChange={e => setNodeForm(p => { const qs=[...p.questions]; qs[qi].options[oi]={...qs[qi].options[oi],is_correct:e.target.checked,score:e.target.checked?100:0}; return {...p,questions:qs} })}
-                                    className="rounded shrink-0" />
-                                  <Input placeholder={`Opção ${oi+1}`} value={o.text} className="bg-background border-border text-xs h-7 flex-1"
-                                    onChange={e => setNodeForm(p => { const qs=[...p.questions]; qs[qi].options[oi]={...qs[qi].options[oi],text:e.target.value}; return {...p,questions:qs} })} />
-                                  <Input placeholder="Pts" type="number" value={o.score} className="bg-background border-border text-xs h-7 w-16"
-                                    onChange={e => setNodeForm(p => { const qs=[...p.questions]; qs[qi].options[oi]={...qs[qi].options[oi],score:Number(e.target.value)}; return {...p,questions:qs} })} />
-                                </div>
-                              ))}
-                              <Button size="sm" variant="ghost" className="h-6 text-[10px] text-primary" onClick={() =>
-                                setNodeForm(p => { const qs=[...p.questions]; qs[qi].options=[...qs[qi].options,{text:"",is_correct:false,score:0,feedback:""}]; return {...p,questions:qs} })}>
-                                + opção
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
+                      <div className="sm:col-span-2 space-y-2">
+                        <Label htmlFor="node-game">Jogo publicado</Label>
+                        <select id="node-game" value={gameRevisionId} onChange={e => setGameRevisionId(e.target.value)}
+                          className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-sm">
+                          <option value="">Selecione um jogo...</option>
+                          {games.filter(game => game.published_revision && (game.eixo === nodeForm.eixo || game.eixo === "all")).map(game => (
+                            <option key={game.id} value={game.published_revision!.id}>
+                              {game.published_revision!.title} — {gameFormatLabels[game.format]} (v{game.published_revision!.version})
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs text-muted-foreground">Publique o jogo na <Link href="/jogos" className="underline">biblioteca de jogos</Link> para adicioná-lo à trilha.</p>
                       </div>
                     )}
+                    <div className="sm:col-span-2 space-y-2">
+                      <Label htmlFor="node-prerequisite">Pré-requisito</Label>
+                      <select id="node-prerequisite" value={prerequisiteId} onChange={e => setPrerequisiteId(e.target.value)}
+                        className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-sm">
+                        <option value="">Sem pré-requisito</option>
+                        {nodes.filter(node => node.eixo === nodeForm.eixo).map(node => (
+                          <option key={node.id} value={node.id}>{node.name}</option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="flex items-center gap-2 sm:col-span-2">
                       <input type="checkbox" id="node_released" checked={nodeForm.is_released}
                         onChange={e => setNodeForm(p => ({...p, is_released: e.target.checked}))} className="rounded" />
                       <label htmlFor="node_released" className="text-xs text-muted-foreground cursor-pointer">Liberar imediatamente</label>
                     </div>
                   </div>
+                  {nodeError && <p role="alert" className="text-sm text-destructive">{nodeError}</p>}
                   <div className="flex gap-2 justify-end pt-2">
-                    <Button variant="outline" size="sm" onClick={() => setShowNodeForm(false)}>Cancelar</Button>
-                    <Button size="sm" onClick={handleCreateNode} disabled={
-                      nodeForm.type === "activity"
-                        ? (!nodeForm.activity_id && !nodeForm.name.trim())
-                        : nodeForm.type === "material"
-                          ? (!nodeForm.reference_id && !nodeForm.name.trim())
-                          : !nodeForm.name.trim()
-                    }>Criar Nó</Button>
+                    <Button variant="outline" size="sm" disabled={creatingNode} onClick={() => setShowNodeForm(false)}>Cancelar</Button>
+                    <Button size="sm" onClick={handleCreateNode} disabled={creatingNode || (
+                      nodeForm.type === "activity" ? !nodeForm.activity_id
+                        : nodeForm.type === "material" ? !nodeForm.reference_id : !gameRevisionId
+                    )}>{creatingNode ? "Criando..." : "Criar Nó"}</Button>
                   </div>
                 </CardContent>
               </Card>

@@ -18,10 +18,11 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import engine
 from app import models
-from app.api import auth, users, materials, nodes, activities, grades
+from app.api import auth, users, materials, nodes, activities, grades, games
+from app.migrations import migrate
 
 # Ensure all tables exist (idempotent — safe to run every startup)
-models.Base.metadata.create_all(bind=engine)
+migrate(engine)
 
 app = FastAPI(title="Capacita DC API")
 
@@ -49,3 +50,4 @@ app.include_router(materials.router,  prefix="/api/materials",  tags=["materials
 app.include_router(nodes.router,      prefix="/api/nodes",      tags=["nodes"])
 app.include_router(activities.router, prefix="/api/activities", tags=["activities"])
 app.include_router(grades.router,     prefix="/api",            tags=["grades"])
+app.include_router(games.router,      prefix="/api",            tags=["games"])

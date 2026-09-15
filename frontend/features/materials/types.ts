@@ -9,8 +9,8 @@ export interface Document {
 export interface Material {
   id: string
   name: string
-  type: string   // "membro" | "trainee" | "pluginfo"
-  eixo: string   // "vendas" | "conexoes" | "experiencia" | "pluginfo" | "trainee"
+  type: string   // "membro" | "trainee"
+  eixo: string   // "vendas" | "conexoes" | "experiencia" | "trainee"
   text?: string
   documents: Document[]
   videos: string[]  // list of URLs

@@ -7,6 +7,7 @@ import type {
   ActivityUpdatePayload,
   SubmissionCreatePayload,
   SubmissionGradePayload,
+  SubmissionQueueFilters,
   ActivitySubmissionOut,
 } from "./types"
 
@@ -21,6 +22,16 @@ export const activitiesApi = {
 
   delete: (activityId: string) =>
     apiClient.delete(`/api/activities/${activityId}`),
+
+  // Fila única de correção, com pendentes primeiro.
+  listQueue: (filters: SubmissionQueueFilters = {}) => {
+    const query = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== "" && value !== "all") query.set(key, String(value))
+    })
+    const suffix = query.toString()
+    return apiClient.get<ActivitySubmissionOut[]>(`/api/submissions${suffix ? `?${suffix}` : ""}`)
+  },
 
   getSubmissions: (activityId: string) =>
     apiClient.get<ActivitySubmissionOut[]>(

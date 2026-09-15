@@ -7,6 +7,40 @@
 
 const BASE_URL = ""
 
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message)
+    this.name = "ApiError"
+  }
+}
+
+export async function responseError(response: Response): Promise<ApiError> {
+  const fallback = response.status === 401
+    ? "Sua sessão expirou. Entre novamente para continuar."
+    : response.status === 403
+      ? "Você não tem permissão para realizar esta ação."
+      : response.status === 422
+        ? "Confira os dados informados e tente novamente."
+        : response.status >= 500
+          ? "O servidor está temporariamente indisponível. Tente novamente."
+          : "Não foi possível concluir a solicitação."
+  let message = fallback
+  if (response.status < 500 && response.status !== 401 && response.status !== 403) {
+    try {
+      const body = await response.json()
+      if (typeof body.detail === "string") message = body.detail
+      else if (Array.isArray(body.detail)) {
+        message = body.detail.map((issue: { loc?: string[]; msg?: string }) =>
+          `${issue.loc?.filter(part => part !== "body").join(".") || "Dados"}: ${issue.msg || fallback}`
+        ).join("; ")
+      }
+    } catch {
+      // Proxies can return HTML instead of the API's JSON error response.
+    }
+  }
+  return new ApiError(response.status, message)
+}
+
 function getToken(): string | null {
   if (typeof window === "undefined") return null
   return localStorage.getItem("token")
@@ -30,14 +64,7 @@ async function request<T>(
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers })
 
   if (!res.ok) {
-    let detail = `HTTP ${res.status}`
-    try {
-      const body = await res.json()
-      detail = body.detail || detail
-    } catch {
-      // non-JSON error body — keep the status string
-    }
-    throw new Error(detail)
+    throw await responseError(res)
   }
 
   // Some endpoints return 204 No Content or plain text

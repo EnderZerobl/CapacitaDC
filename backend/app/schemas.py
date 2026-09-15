@@ -1,6 +1,6 @@
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, model_validator
 
 # --- User Schemas ---
 class UserBase(BaseModel):
@@ -37,7 +37,11 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
 
 class TraineeUpdate(BaseModel):
-    notaRotacao: Optional[float] = None
+    # A nota de rotação não entra aqui: ela é calculada a partir das atividades
+    # corrigidas. Recusar o campo em vez de ignorá-lo evita um cliente antigo
+    # achar que gravou uma nota.
+    model_config = ConfigDict(extra="forbid")
+
     rotacao: Optional[int] = None  # 1 ou 2
 
 # --- Document Schemas ---
@@ -68,11 +72,13 @@ class VideoOut(VideoBase):
 # --- Material Schemas ---
 class MaterialBase(BaseModel):
     name: str
-    type: str  # "membro", "trainee", "pluginfo"
-    eixo: str  # "vendas", "conexoes", "experiencia", "pluginfo"
+    type: str  # "membro", "trainee"
+    eixo: str  # "vendas", "conexoes", "experiencia"
     text: Optional[str] = ""
 
 class MaterialCreate(MaterialBase):
+    type: Literal["membro", "trainee"]
+    eixo: Literal["vendas", "conexoes", "experiencia", "trainee", "all"]
     documents: List[DocumentCreate] = []
     videos: List[str] = []  # List of URLs
 
@@ -97,8 +103,8 @@ class TokenData(BaseModel):
 class OptionOut(BaseModel):
     id: str
     text: str
-    is_correct: bool
-    score: int
+    is_correct: Optional[bool] = None
+    score: Optional[int] = None
     feedback: Optional[str] = ""
 
     model_config = ConfigDict(from_attributes=True)
@@ -116,6 +122,8 @@ class TrainingNodeOut(BaseModel):
     name: str
     type: str  # "activity", "material", "game"
     reference_id: Optional[str] = None
+    game_revision_id: Optional[str] = None
+    game_format: Optional[Literal["quiz", "scenario"]] = None
     activity_id: Optional[str] = None
     eixo: str
     prerequisite_node_id: Optional[str] = None
@@ -131,6 +139,8 @@ class TrainingNodeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class TrainingNodeGraphOut(TrainingNodeOut):
+    # Pré-requisito que vale de fato: o escolhido à mão ou a etapa anterior do eixo.
+    effective_prerequisite_id: Optional[str] = None
     completed: bool = False
     unlocked: bool = True
     user_score: int = 0
@@ -140,29 +150,63 @@ class NodeReleaseUpdate(BaseModel):
     released_at: Optional[datetime] = None  # None = liberar imediatamente
 
 class OptionCreate(BaseModel):
-    text: str
+    model_config = ConfigDict(str_strip_whitespace=True)
+    text: str = Field(min_length=1)
     is_correct: bool = False
-    score: int = 0
+    score: int = Field(default=0, ge=0)
     feedback: Optional[str] = ""
 
 class QuestionCreate(BaseModel):
-    text: str
+    model_config = ConfigDict(str_strip_whitespace=True)
+    text: str = Field(min_length=1)
     explanation: Optional[str] = ""
-    options: List[OptionCreate] = []
+    options: List[OptionCreate] = Field(min_length=2)
+
+    @model_validator(mode="after")
+    def validate_answers(self):
+        if not any(option.is_correct for option in self.options):
+            raise ValueError("Cada pergunta precisa de pelo menos uma alternativa correta")
+        return self
 
 class TrainingNodeCreate(BaseModel):
     name: Optional[str] = None
-    type: str  # "activity" | "material" | "game"
-    eixo: str
+    type: Literal["activity", "material", "game"]
+    eixo: Literal["trainee", "vendas", "conexoes", "experiencia", "all"]
     activity_id: Optional[str] = None
     reference_id: Optional[str] = None
+    game_revision_id: Optional[str] = None
     prerequisite_node_id: Optional[str] = None
     is_released: bool = False
     deadline: Optional[datetime] = None
     questions: List[QuestionCreate] = []
 
+    @model_validator(mode="after")
+    def validate_content(self):
+        if self.type == "game":
+            if not self.questions and not self.game_revision_id:
+                raise ValueError("Selecione um jogo publicado ou adicione perguntas")
+            if self.questions and self.game_revision_id:
+                raise ValueError("Selecione um jogo publicado ou perguntas, sem misturar os formatos")
+            if self.activity_id or self.reference_id:
+                raise ValueError("Jogos não podem vincular uma atividade ou material")
+        elif self.type == "material" and not self.reference_id:
+            raise ValueError("Selecione o material da etapa")
+        elif self.type == "activity" and not (self.activity_id or self.reference_id):
+            raise ValueError("Selecione a atividade da etapa")
+        if self.type != "game" and self.questions:
+            raise ValueError("Perguntas são permitidas apenas em jogos")
+        if self.type != "game" and self.game_revision_id:
+            raise ValueError("Versões de jogos são permitidas apenas em etapas de jogo")
+        return self
+
+class GameAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    question_id: str
+    option_id: str
+
 class GameSubmitRequest(BaseModel):
-    score: int
+    model_config = ConfigDict(extra="forbid")
+    answers: List[GameAnswer] = Field(min_length=1)
 
 class LeaderboardEntry(BaseModel):
     id: str
@@ -181,11 +225,11 @@ class LeaderboardEntry(BaseModel):
 class ActivityCreate(BaseModel):
     title: str
     description: Optional[str] = ""
-    eixo: str  # "trainee", "vendas", "conexoes", "experiencia", "pluginfo", "all"
+    eixo: str  # "trainee", "vendas", "conexoes", "experiencia", "all"
     accepts_file: bool = True
     deadline: Optional[datetime] = None
     material_id: Optional[str] = None
-    weight: float = 1.0
+    weight: float = Field(default=1.0, ge=0, allow_inf_nan=False)
 
 class ActivityUpdate(BaseModel):
     is_open: Optional[bool] = None
@@ -194,7 +238,7 @@ class ActivityUpdate(BaseModel):
     description: Optional[str] = None
     accepts_file: Optional[bool] = None
     material_id: Optional[str] = None
-    weight: Optional[float] = None
+    weight: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
 
 class ActivitySubmissionOut(BaseModel):
     id: str
@@ -205,7 +249,11 @@ class ActivitySubmissionOut(BaseModel):
     submitted_at: Optional[datetime] = None
     grade: Optional[float] = None
     feedback: Optional[str] = ""
-    user_name: Optional[str] = None  # populated from join
+    user_name: Optional[str] = None      # populated from join
+    user_type: Optional[str] = None      # trainee ou membro, para a fila de correção
+    activity_title: Optional[str] = None
+    activity_weight: Optional[float] = None
+    activity_eixo: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -229,11 +277,12 @@ class ActivityOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class SubmissionCreate(BaseModel):
+    node_id: Optional[str] = None
     file_url: Optional[str] = None
     comment: Optional[str] = ""
 
 class SubmissionGrade(BaseModel):
-    grade: float
+    grade: float = Field(ge=0, le=10)
     feedback: Optional[str] = ""
 
 
@@ -277,4 +326,3 @@ class GradeRow(BaseModel):
     nodes_total: int = 0
     activities_submitted: int = 0
     activities_graded: int = 0
-    avg_activity_grade: Optional[float] = None

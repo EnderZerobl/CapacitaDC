@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Float, Boolean, ForeignKey, Text, Integer, DateTime
+from sqlalchemy import Column, String, Float, Boolean, ForeignKey, Text, Integer, DateTime, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -29,8 +29,8 @@ class Material(Base):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     name = Column(String, nullable=False)
-    type = Column(String, nullable=False)  # "membro", "trainee", "pluginfo"
-    eixo = Column(String, nullable=False)  # "vendas", "conexoes", "experiencia", "pluginfo"
+    type = Column(String, nullable=False)  # "membro", "trainee"
+    eixo = Column(String, nullable=False)  # "vendas", "conexoes", "experiencia"
     text = Column(Text, nullable=True, default="")
 
     # Relationships
@@ -67,6 +67,8 @@ class TrainingNode(Base):
     name = Column(String, nullable=False)
     type = Column(String, nullable=False)  # "material", "game"
     reference_id = Column(String, nullable=True)  # Material.id if type == "material", null if game
+    game_revision_id = Column(String, ForeignKey("game_revisions.id", ondelete="RESTRICT"), nullable=True)
+    game_revision = relationship("GameRevision")
     eixo = Column(String, nullable=False)  # "vendas", "conexoes", "experiencia", "trainee"
     prerequisite_node_id = Column(String, ForeignKey("training_nodes.id", ondelete="SET NULL"), nullable=True)
     x_pos = Column(Float, nullable=True, default=0.0)
@@ -85,6 +87,7 @@ class TrainingNode(Base):
     # Relationships
     questions = relationship("Question", back_populates="node", cascade="all, delete-orphan")
     progress = relationship("UserNodeProgress", back_populates="node", cascade="all, delete-orphan")
+    game_attempts = relationship("GameAttempt", back_populates="node", cascade="all, delete-orphan")
 
 class Question(Base):
     __tablename__ = "questions"
@@ -113,6 +116,7 @@ class Option(Base):
 
 class UserNodeProgress(Base):
     __tablename__ = "user_node_progress"
+    __table_args__ = (UniqueConstraint("user_id", "node_id", name="uq_user_node_progress"),)
 
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -126,6 +130,55 @@ class UserNodeProgress(Base):
     node = relationship("TrainingNode", back_populates="progress")
 
 
+class Game(Base):
+    __tablename__ = "games"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    title = Column(String, nullable=False)
+    instructions = Column(Text, nullable=False, default="")
+    eixo = Column(String, nullable=False)
+    format = Column(String, nullable=False)
+    config = Column(JSON, nullable=False, default=dict)
+    created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
+    revisions = relationship("GameRevision", back_populates="game", cascade="all, delete-orphan", order_by="GameRevision.version")
+
+
+class GameRevision(Base):
+    __tablename__ = "game_revisions"
+    __table_args__ = (UniqueConstraint("game_id", "version", name="uq_game_revision_version"),)
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    game_id = Column(String, ForeignKey("games.id", ondelete="RESTRICT"), nullable=False)
+    version = Column(Integer, nullable=False)
+    title = Column(String, nullable=False)
+    instructions = Column(Text, nullable=False, default="")
+    format = Column(String, nullable=False)
+    config = Column(JSON, nullable=False)
+    max_points = Column(Integer, nullable=False, default=100)
+    published_at = Column(DateTime, nullable=False)
+    game = relationship("Game", back_populates="revisions")
+
+
+class GameAttempt(Base):
+    __tablename__ = "game_attempts"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    node_id = Column(String, ForeignKey("training_nodes.id", ondelete="CASCADE"), nullable=False, index=True)
+    game_revision_id = Column(String, ForeignKey("game_revisions.id", ondelete="RESTRICT"), nullable=False)
+    # One resumable attempt per user/node. Completed attempts release this key.
+    active_key = Column(String, unique=True, nullable=True)
+    status = Column(String, nullable=False, default="in_progress")
+    answers = Column(JSON, nullable=False, default=list)
+    result = Column(JSON, nullable=True)
+    started_at = Column(DateTime, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    node = relationship("TrainingNode", back_populates="game_attempts")
+    revision = relationship("GameRevision")
+
+
 # --- Atividades com envio de arquivo e deadline ---
 
 class Activity(Base):
@@ -134,7 +187,7 @@ class Activity(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True, default="")
-    eixo = Column(String, nullable=False)          # "trainee", "vendas", "conexoes", "experiencia", "pluginfo", "all"
+    eixo = Column(String, nullable=False)          # "trainee", "vendas", "conexoes", "experiencia", "all"
     accepts_file = Column(Boolean, default=True, nullable=False)  # Se exige envio de arquivo
     deadline = Column(DateTime, nullable=True)     # None = sem prazo definido
     is_open = Column(Boolean, default=True, nullable=False)  # Fechamento manual ou automático via deadline

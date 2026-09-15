@@ -6,9 +6,8 @@ import { useAuth } from "@/lib/auth-context"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import {
-  ArrowLeft, User, Star, BookOpen, Gamepad2, Check,
+  ArrowLeft, User, BookOpen, Gamepad2, Check,
   ClipboardList, Link2, Award, Clock, Loader2
 } from "lucide-react"
 
@@ -31,6 +30,8 @@ interface ActivitySubmission {
   grade?: number | null
   feedback?: string
   user_name?: string
+  activity_title?: string | null
+  activity_weight?: number | null
 }
 
 interface UserProfile {
@@ -53,8 +54,6 @@ export default function PerfilPage() {
   const { user, isLoading } = useAuth()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
-  const [nota, setNota] = useState("")
-  const [savingNota, setSavingNota] = useState(false)
 
   const userId = (localParams?.id as string) || ""
 
@@ -82,7 +81,6 @@ export default function PerfilPage() {
       if (res.ok) {
         const data: UserProfile = await res.json()
         setProfile(data)
-        setNota(data.nota_rotacao != null ? data.nota_rotacao.toString() : "")
       } else {
         console.error(`[PerfilPage] Failed to fetch profile: ${res.status}`)
         router.push("/")
@@ -92,26 +90,6 @@ export default function PerfilPage() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleSaveNota = async () => {
-    const token = localStorage.getItem("token")
-    if (!token || !profile) return
-    const n = parseFloat(nota)
-    if (isNaN(n) || n < 0 || n > 10) { alert("Nota inválida (0–10)"); return }
-    setSavingNota(true)
-    try {
-      const res = await fetch(`/api/users/trainees/${profile.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ notaRotacao: n }),
-      })
-      if (res.ok) {
-        const updated = await res.json()
-        setProfile(p => p ? { ...p, nota_rotacao: updated.nota_rotacao } : p)
-      }
-    } catch (e) { console.error(e) }
-    finally { setSavingNota(false) }
   }
 
   if (isLoading || loading || !userId || userId === "[id]") {
@@ -127,11 +105,6 @@ export default function PerfilPage() {
   const completedNodes = profile.node_progress.filter(n => n.completed)
   const totalNodes = profile.node_progress.length
   const pct = totalNodes > 0 ? Math.round((completedNodes.length / totalNodes) * 100) : 0
-  const gradedSubs = profile.activity_submissions.filter(s => s.grade != null)
-  const avgGrade = gradedSubs.length > 0
-    ? gradedSubs.reduce((s, a) => s + (a.grade ?? 0), 0) / gradedSubs.length
-    : null
-
   const isTrainee = profile.type === "trainee"
 
   return (
@@ -184,44 +157,21 @@ export default function PerfilPage() {
                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Trilha</p>
                     <p className="text-lg font-black text-foreground">{pct}%</p>
                   </div>
-                  {avgGrade != null && (
-                    <div className="text-center">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wider">Média Atividades</p>
-                      <p className={`text-lg font-black ${avgGrade >= 7 ? "text-emerald-400" : "text-rose-400"}`}>{avgGrade.toFixed(1)}</p>
-                    </div>
-                  )}
-                  {profile.nota_rotacao != null && (
-                    <div className="text-center">
-                      <p className="text-xs text-muted-foreground uppercase tracking-wider">Nota Rotação</p>
+                  <div className="text-center">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Média Ponderada</p>
+                    {profile.nota_rotacao != null ? (
                       <p className={`text-lg font-black ${profile.nota_rotacao >= 7 ? "text-emerald-400" : profile.nota_rotacao >= 5 ? "text-amber-400" : "text-rose-400"}`}>
-                        {profile.nota_rotacao.toFixed(1)}
+                        {profile.nota_rotacao.toFixed(2)}
                       </p>
-                    </div>
-                  )}
+                    ) : (
+                      <p className="text-lg font-black text-muted-foreground">—</p>
+                    )}
+                  </div>
                 </div>
                 )}
 
               </div>
 
-              {/* Quick nota edit */}
-              {isTrainee && (
-                <div className="flex flex-col gap-2 shrink-0">
-                  <p className="text-xs text-muted-foreground font-semibold">Nota de Rotação</p>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number" min="0" max="10" step="0.1"
-                      value={nota}
-                      onChange={e => setNota(e.target.value)}
-                      className="bg-secondary border-border w-20 h-8 text-sm"
-                      placeholder="0–10"
-                    />
-                    <Button size="sm" className="h-8 gap-1" onClick={handleSaveNota} disabled={savingNota}>
-                      <Star className="h-3 w-3" />
-                      Salvar
-                    </Button>
-                  </div>
-                </div>
-              )}
             </div>
           </CardContent>
         </Card>
@@ -298,7 +248,10 @@ export default function PerfilPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <ClipboardList className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-xs font-semibold text-foreground">Atividade</span>
+                        <span className="text-xs font-semibold text-foreground">{sub.activity_title || "Atividade"}</span>
+                        {sub.activity_weight != null && (
+                          <span className="text-[10px] text-muted-foreground">peso {sub.activity_weight}</span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         {sub.grade != null ? (

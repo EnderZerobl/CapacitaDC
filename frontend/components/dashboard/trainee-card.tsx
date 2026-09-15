@@ -70,7 +70,7 @@ export function TraineeCard({ id, name, photo, notaRotacao, rotacao, showGrade =
                           : "border-rose-500/30 text-rose-400"
                       }`}
                     >
-                      {notaRotacao.toFixed(1)}
+                      {notaRotacao.toFixed(2)}
                     </Badge>
                   </div>
                 ) : (

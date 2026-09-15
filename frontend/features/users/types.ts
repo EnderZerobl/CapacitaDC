@@ -44,7 +44,6 @@ export interface GradeRow {
   nodes_total: number
   activities_submitted: number
   activities_graded: number
-  avg_activity_grade?: number | null
 }
 
 export interface UserCreatePayload {
@@ -65,7 +64,7 @@ export interface UserUpdatePayload {
   password?: string
 }
 
+// A nota de rotação é calculada pelo servidor a partir das atividades corrigidas.
 export interface TraineeUpdatePayload {
-  notaRotacao?: number
   rotacao?: number
 }

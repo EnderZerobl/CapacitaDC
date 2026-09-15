@@ -6,6 +6,7 @@ import type {
   NodeReleasePayload,
   NodeOrderPayload,
   GameSubmitPayload,
+  GameResult,
 } from "./types"
 
 export const nodesApi = {
@@ -29,10 +30,5 @@ export const nodesApi = {
     ),
 
   submitGame: (nodeId: string, payload: GameSubmitPayload) =>
-    apiClient.post<{
-      detail: string
-      score_added: number
-      total_score: number
-      user_total_points: number
-    }>(`/api/nodes/${nodeId}/submit-game`, payload),
+    apiClient.post<GameResult>(`/api/nodes/${nodeId}/submit-game`, payload),
 }

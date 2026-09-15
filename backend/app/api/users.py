@@ -14,11 +14,13 @@ from app.auth import (
     get_current_member_or_above,
     get_current_organizador_or_admin,
 )
+from app.services.access import allowed_activity_eixos, allowed_node_eixos
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[schemas.UserOut])
+@router.get("", response_model=List[schemas.UserOut])
+@router.get("/", response_model=List[schemas.UserOut], include_in_schema=False)
 def get_users(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_member_or_above),
@@ -28,7 +30,8 @@ def get_users(
     return db.query(models.User).all()
 
 
-@router.post("/", response_model=schemas.UserOut)
+@router.post("", response_model=schemas.UserOut)
+@router.post("/", response_model=schemas.UserOut, include_in_schema=False)
 def create_member(
     user_in: schemas.UserCreate,
     db: Session = Depends(get_db),
@@ -69,7 +72,7 @@ def create_member(
         type=user_in.type,
         eixo=eixo_label,
         photo=user_in.photo or "",
-        nota_rotacao=0.0 if user_in.type == "trainee" else None,
+        nota_rotacao=None,
         pontos_acumulados=0,
     )
     db.add(new_user)
@@ -111,7 +114,7 @@ def update_trainee(
     trainee_id: str,
     trainee_update: schemas.TraineeUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_member_or_above),
+    current_user: models.User = Depends(get_current_organizador_or_admin),
 ):
     trainee = db.query(models.User).filter(
         models.User.id == trainee_id, models.User.type == "trainee"
@@ -119,8 +122,6 @@ def update_trainee(
     if not trainee:
         raise HTTPException(status_code=404, detail="Trainee não encontrado")
 
-    if trainee_update.notaRotacao is not None:
-        trainee.nota_rotacao = trainee_update.notaRotacao
     if trainee_update.rotacao is not None:
         if trainee_update.rotacao not in [1, 2]:
             raise HTTPException(status_code=400, detail="Rotação deve ser 1 ou 2")
@@ -190,7 +191,13 @@ def get_user_profile(
     target = db.query(models.User).filter(models.User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if current_user.type == "organizador" and target.type != "trainee":
+        raise HTTPException(
+            status_code=403,
+            detail="Organizadores só podem consultar os perfis dos trainees.",
+        )
 
+    visible_node_eixos = allowed_node_eixos(current_user)
     progress_list = db.query(models.UserNodeProgress).filter(
         models.UserNodeProgress.user_id == user_id
     ).all()
@@ -199,7 +206,7 @@ def get_user_profile(
         node = db.query(models.TrainingNode).filter(
             models.TrainingNode.id == p.node_id
         ).first()
-        if node:
+        if node and (visible_node_eixos is None or node.eixo in visible_node_eixos):
             node_progress.append(
                 schemas.NodeProgressOut(
                     node_id=node.id,
@@ -211,9 +218,13 @@ def get_user_profile(
                 )
             )
 
-    subs = db.query(models.ActivitySubmission).filter(
+    submissions_query = db.query(models.ActivitySubmission).join(models.Activity).filter(
         models.ActivitySubmission.user_id == user_id
-    ).all()
+    )
+    visible_activity_eixos = allowed_activity_eixos(current_user)
+    if visible_activity_eixos is not None:
+        submissions_query = submissions_query.filter(models.Activity.eixo.in_(visible_activity_eixos))
+    subs = submissions_query.all()
     activity_submissions = [
         schemas.ActivitySubmissionOut(
             id=sub.id,

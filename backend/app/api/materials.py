@@ -10,39 +10,40 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas
 from app.auth import get_current_user, get_current_organizador_or_admin
+from app.services.node_service import blocked_content_ids
+from app.services.access import (
+    allowed_material_types,
+    ensure_material_access,
+    ensure_material_type_access,
+)
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[schemas.MaterialOut])
+@router.get("", response_model=List[schemas.MaterialOut])
+@router.get("/", response_model=List[schemas.MaterialOut], include_in_schema=False)
 def get_materials(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    if current_user.type == "trainee":
-        return db.query(models.Material).filter(models.Material.type == "trainee").all()
-    elif current_user.type == "membro":
-        return db.query(models.Material).filter(
-            models.Material.type.in_(["trainee", "membro"])
-        ).all()
-    elif current_user.type == "organizador":
-        return db.query(models.Material).filter(
-            models.Material.type.in_(["trainee", "pluginfo"])
-        ).all()
-    return db.query(models.Material).all()
+    query = db.query(models.Material)
+    allowed = allowed_material_types(current_user)
+    if allowed is not None:
+        query = query.filter(models.Material.type.in_(allowed))
+    blocked_materials, _ = blocked_content_ids(db, current_user)
+    if blocked_materials:
+        query = query.filter(models.Material.id.notin_(blocked_materials))
+    return query.all()
 
 
-@router.post("/", response_model=schemas.MaterialOut)
+@router.post("", response_model=schemas.MaterialOut)
+@router.post("/", response_model=schemas.MaterialOut, include_in_schema=False)
 def create_material(
     material_in: schemas.MaterialCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_organizador_or_admin),
 ):
-    if current_user.type == "organizador" and material_in.type not in ["pluginfo", "trainee"]:
-        raise HTTPException(
-            status_code=403,
-            detail="Acesso não autorizado. Organizadores só podem gerenciar conteúdos do PlugInfo e Trainees.",
-        )
+    ensure_material_type_access(current_user, material_in.type, manage=True)
 
     new_material = models.Material(
         id=str(uuid.uuid4()),
@@ -85,14 +86,8 @@ def update_material(
     if not material:
         raise HTTPException(status_code=404, detail="Material não encontrado")
 
-    if current_user.type == "organizador" and (
-        material.type not in ["pluginfo", "trainee"]
-        or material_in.type not in ["pluginfo", "trainee"]
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail="Acesso não autorizado. Organizadores só podem gerenciar conteúdos do PlugInfo e Trainees.",
-        )
+    ensure_material_access(current_user, material, manage=True)
+    ensure_material_type_access(current_user, material_in.type, manage=True)
 
     material.name = material_in.name
     material.type = material_in.type
@@ -132,11 +127,7 @@ def delete_material(
     if not material:
         raise HTTPException(status_code=404, detail="Material não encontrado")
 
-    if current_user.type == "organizador" and material.type not in ["pluginfo", "trainee"]:
-        raise HTTPException(
-            status_code=403,
-            detail="Acesso não autorizado. Organizadores só podem gerenciar conteúdos do PlugInfo e Trainees.",
-        )
+    ensure_material_access(current_user, material, manage=True)
 
     db.delete(material)
     db.commit()

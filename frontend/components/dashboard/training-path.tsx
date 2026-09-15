@@ -1,6 +1,6 @@
 "use client"
 
-import { BookOpen, Gamepad2, Lock, Check, ShieldAlert } from "lucide-react"
+import { BookOpen, ClipboardList, Gamepad2, Lock, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
@@ -19,9 +19,11 @@ interface TrainingNode {
   deadline?: string | null
   order_index?: number
   eixo: string
-  prerequisite_node_id?: string
-  x_pos: number
-  y_pos: number
+  prerequisite_node_id?: string | null
+  /** Corrente que vale de fato, calculada pelo servidor. */
+  effective_prerequisite_id?: string | null
+  x_pos?: number | null
+  y_pos?: number | null
   completed: boolean
   unlocked: boolean
   user_score: number
@@ -37,53 +39,43 @@ interface TrainingPathProps {
   axisName?: string
 }
 
+/** Datas chegam em UTC sem sufixo; sem o 'Z' o navegador as lê como hora local. */
+function asUtcDate(value: string): Date {
+  const hasTimezone = value.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(value)
+  return new Date(hasTimezone ? value : `${value}Z`)
+}
+
+const CONTAINER_WIDTH = 300
+const STEP_X = 60
+const STEP_Y = 120
+const START_Y = 44
+const NODE_RADIUS = 28
+// A linha para na borda do nó em vez de passar por baixo dele.
+const LINE_GAP = NODE_RADIUS + 6
+
 export function TrainingPath({ nodes, onSelectNode, highlighted = false, axisName }: TrainingPathProps) {
-  // Sort and dynamically position nodes by order_index in a snake layout
-  const sortedNodes = [...nodes].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
-  const processedNodes = sortedNodes.map((node, index) => {
-    const xPattern = [0, 1, -1]
-    const x_pos = xPattern[index % 3]
-    const y_pos = index * 1.5
-    return {
-      ...node,
-      x_pos,
-      y_pos,
-      prerequisite_node_id: index > 0 ? sortedNodes[index - 1].id : undefined
-    }
-  })
-
-  // Constants for fixed width 360px centering
-  const containerWidth = 360
-  const centerX = containerWidth / 2
-  const stepY = 120
-  const stepX = 70
-  const startY = 40
-
-  // Calculate container height dynamically
-  const maxY = processedNodes.reduce((max, node) => (node.y_pos > max ? node.y_pos : max), 0)
-  const containerHeight = maxY * stepY + startY + 80
-
-  // Helper to get coordinates
-  const getNodeCoords = (node: any) => {
-    const x = centerX + node.x_pos * stepX
-    const y = node.y_pos * stepY + startY
-    return { x, y }
-  }
+  const sorted = [...nodes].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+  const placed = sorted.map((node, index) => ({
+    ...node,
+    x: CONTAINER_WIDTH / 2 + [0, 1, -1][index % 3] * STEP_X,
+    y: index * STEP_Y + START_Y,
+    // Sem o campo do servidor, a etapa anterior na tela mantém a linha visível.
+    linkedTo: node.effective_prerequisite_id ?? node.prerequisite_node_id ?? sorted[index - 1]?.id ?? null,
+  }))
+  const height = (placed.at(-1)?.y ?? START_Y) + NODE_RADIUS + 24
 
   return (
-    <div 
-      className={`relative p-6 rounded-2xl bg-card border-2 transition-all duration-300 ${
-        highlighted 
-          ? "border-primary/50 shadow-lg shadow-primary/5 bg-gradient-to-b from-card to-primary/5 animate-pulse-subtle" 
-          : "border-border shadow-sm"
-      }`}
-    >
+    <div className={`relative rounded-2xl border-2 bg-card p-6 transition-all duration-300 ${
+      highlighted
+        ? "border-primary/50 bg-gradient-to-b from-card to-primary/5 shadow-lg shadow-primary/5"
+        : "border-border shadow-sm"
+    }`}>
       {axisName && (
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="font-bold text-lg flex items-center space-x-2 text-foreground">
+        <div className="mb-6 flex items-center justify-between">
+          <h3 className="flex items-center space-x-2 text-lg font-bold text-foreground">
             <span>Trilha: {axisName}</span>
             {highlighted && (
-              <span className="text-[10px] bg-primary text-white font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+              <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
                 Seu Eixo
               </span>
             )}
@@ -91,110 +83,81 @@ export function TrainingPath({ nodes, onSelectNode, highlighted = false, axisNam
         </div>
       )}
 
-      <div 
-        className="relative mx-auto overflow-visible"
-        style={{ width: `${containerWidth}px`, height: `${containerHeight}px` }}
-      >
-        {/* SVG Connecting Lines */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
-          {processedNodes.map((node) => {
-            if (!node.prerequisite_node_id) return null
-            const prereq = processedNodes.find((n) => n.id === node.prerequisite_node_id)
-            if (!prereq) return null
-
-            const start = getNodeCoords(prereq)
-            const end = getNodeCoords(node)
-
-            // Line styles based on unlock status
-            const isLineUnlocked = prereq.completed
-            const strokeColor = isLineUnlocked 
-              ? "var(--primary)" 
-              : "var(--border)"
-            
+      {placed.length === 0 ? (
+        <p className="py-10 text-center text-sm text-muted-foreground">Nenhuma etapa nesta trilha ainda.</p>
+      ) : (
+      // A caixa tem largura fixa para o cálculo das posições; em coluna estreita ela rola.
+      <div className="w-full overflow-x-auto">
+      <div className="relative mx-auto" style={{ width: `${CONTAINER_WIDTH}px`, height: `${height}px` }}>
+        <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">
+          {placed.map(node => {
+            const previous = placed.find(item => item.id === node.linkedTo)
+            if (!previous) return null
+            const dx = node.x - previous.x
+            const dy = node.y - previous.y
+            const length = Math.hypot(dx, dy) || 1
+            const trimX = (dx / length) * LINE_GAP
+            const trimY = (dy / length) * LINE_GAP
+            // Sólida quando a etapa anterior foi concluída: a linha mostra a regra real.
+            const open = previous.completed
             return (
-              <g key={`line-${prereq.id}-${node.id}`}>
-                <line
-                  x1={start.x}
-                  y1={start.y}
-                  x2={end.x}
-                  y2={end.y}
-                  stroke={strokeColor}
-                  strokeWidth={4}
-                  strokeLinecap="round"
-                  strokeDasharray={isLineUnlocked ? "none" : "6,6"}
-                  className="transition-all duration-300"
-                />
-              </g>
+              <line key={`linha-${previous.id}-${node.id}`}
+                x1={previous.x + trimX} y1={previous.y + trimY}
+                x2={node.x - trimX} y2={node.y - trimY}
+                stroke={open ? "var(--primary)" : "var(--border)"}
+                strokeWidth={4} strokeLinecap="round"
+                strokeDasharray={open ? "none" : "6,6"}
+                className="trail-link transition-all duration-300" />
             )
           })}
         </svg>
 
-        {/* Nodes Buttons */}
-        {processedNodes.map((node) => {
-          const { x, y } = getNodeCoords(node)
-          
-          let nodeBg = "bg-muted text-muted-foreground border-border"
+        {placed.map(node => {
+          let style = "bg-muted text-muted-foreground border-border"
           if (node.unlocked) {
-            if (node.completed) {
-              nodeBg = "bg-emerald-600 border-emerald-500 text-white hover:bg-emerald-700 shadow-md shadow-emerald-500/10"
-            } else {
-              nodeBg = "bg-primary border-primary text-white hover:bg-primary-hover shadow-md shadow-primary/10 animate-bounce-subtle"
-            }
+            style = node.completed
+              ? "bg-emerald-600 border-emerald-500 text-white hover:bg-emerald-700 shadow-md shadow-emerald-500/10"
+              : "bg-primary border-primary text-white hover:brightness-110 shadow-md shadow-primary/20 ring-4 ring-primary/20"
           }
-
-          const isPrereqCompleted = node.unlocked
-
+          const scheduled = node.is_released && node.released_at && asUtcDate(node.released_at) > new Date()
           return (
-            <div
-              key={node.id}
-              className="absolute -translate-x-1/2 -translate-y-1/2 z-10"
-              style={{ left: `${x}px`, top: `${y}px` }}
-            >
+            <div key={node.id} className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
+              style={{ left: `${node.x}px`, top: `${node.y}px` }}>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div>
-                      <Button
-                        disabled={!isPrereqCompleted}
+                      <Button aria-label={node.name} disabled={!node.unlocked}
                         onClick={() => onSelectNode(node)}
-                        className={`w-14 h-14 rounded-full p-0 flex items-center justify-center border-4 transition-all duration-200 ${nodeBg} ${
-                          !isPrereqCompleted && "cursor-not-allowed opacity-60"
-                        }`}
-                      >
-                        {node.completed ? (
-                          <Check className="w-6 h-6 stroke-[3px]" />
-                        ) : !node.unlocked ? (
-                          <Lock className="w-5 h-5" />
-                        ) : node.type === "material" ? (
-                          <BookOpen className="w-6 h-6" />
-                        ) : (
-                          <Gamepad2 className="w-6 h-6" />
-                        )}
+                        className={`flex size-14 items-center justify-center rounded-full border-4 p-0 transition-all duration-200 ${style} ${
+                          !node.unlocked ? "cursor-not-allowed opacity-60" : ""
+                        }`}>
+                        {node.completed ? <Check className="size-6 stroke-[3px]" />
+                          : !node.unlocked ? <Lock className="size-5" />
+                          : node.type === "material" ? <BookOpen className="size-6" />
+                          : node.type === "activity" ? <ClipboardList className="size-6" />
+                          : <Gamepad2 className="size-6" />}
                       </Button>
                     </div>
                   </TooltipTrigger>
                   <TooltipContent side="top" align="center" className="max-w-[200px] text-center">
-                    <p className="font-bold text-xs">{node.name}</p>
+                    <p className="text-xs font-bold">{node.name}</p>
                     {node.type === "game" && node.completed && (
-                      <p className="text-[10px] text-emerald-400 mt-1 font-semibold">
-                        Pontuação: {node.user_score} pts
-                      </p>
+                      <p className="mt-1 text-[10px] font-semibold text-emerald-400">Pontuação: {node.user_score} pts</p>
                     )}
                     {node.type === "material" && node.completed && (
-                      <p className="text-[10px] text-emerald-400 mt-1 font-semibold">
-                        Lido (+50 pts)
-                      </p>
+                      <p className="mt-1 text-[10px] font-semibold text-emerald-400">Lido (+50 pts)</p>
                     )}
                     {!node.unlocked && (
-                      <p className="text-[10px] text-rose-400 mt-1 font-semibold flex items-center justify-center flex-col gap-0.5">
-                        <span className="flex items-center gap-1">
-                          <Lock className="w-3 h-3 mr-1" /> Bloqueado
-                        </span>
-                        {node.is_released && node.released_at && new Date(node.released_at) > new Date() && (
-                          <span className="text-amber-400 text-[9px]">
-                            ⏰ Disponível em {new Date(node.released_at).toLocaleString("pt-BR")}
+                      <p className="mt-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold text-rose-400">
+                        <span className="flex items-center gap-1"><Lock className="mr-1 size-3" />Bloqueado</span>
+                        {scheduled ? (
+                          <span className="text-[9px] text-amber-400">
+                            ⏰ Disponível em {asUtcDate(node.released_at!).toLocaleString("pt-BR")}
                           </span>
-                        )}
+                        ) : node.linkedTo ? (
+                          <span className="text-[9px] text-muted-foreground">Conclua a etapa anterior</span>
+                        ) : null}
                       </p>
                     )}
                   </TooltipContent>
@@ -204,6 +167,8 @@ export function TrainingPath({ nodes, onSelectNode, highlighted = false, axisNam
           )
         })}
       </div>
+      </div>
+      )}
     </div>
   )
 }

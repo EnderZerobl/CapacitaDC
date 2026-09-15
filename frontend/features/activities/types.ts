@@ -49,6 +49,7 @@ export interface ActivityUpdatePayload {
 export interface SubmissionCreatePayload {
   file_url?: string | null
   comment?: string
+  node_id?: string | null
 }
 
 export interface SubmissionGradePayload {
@@ -66,4 +67,18 @@ export interface ActivitySubmissionOut {
   grade?: number | null
   feedback?: string
   user_name?: string | null
+  user_type?: string | null
+  activity_title?: string | null
+  activity_weight?: number | null
+  activity_eixo?: string | null
+}
+
+export interface SubmissionQueueFilters {
+  status?: "pending" | "graded" | "all"
+  user_type?: "trainee" | "membro" | "all"
+  eixo?: string
+  activity_id?: string
+  user_id?: string
+  limit?: number
+  offset?: number
 }

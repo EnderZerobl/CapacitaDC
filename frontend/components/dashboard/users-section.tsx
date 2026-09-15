@@ -30,10 +30,7 @@ interface UsersSectionProps {
   showGrades?: boolean    // admin/org only
   showProfiles?: boolean  // admin/org only
   currentUserRole?: string
-  onUpdateTrainee?: (
-    traineeId: string,
-    data: { notaRotacao?: number; rotacao?: number }
-  ) => void
+  onUpdateTrainee?: (traineeId: string, data: { rotacao?: number }) => void
   onUpdateUser?: (
     userId: string,
     data: { name: string; email: string; cargo: string; type: string; eixo?: string; password?: string; rotacao?: number }
@@ -56,7 +53,7 @@ function TraineeGroup({
   showGrades?: boolean
   showProfiles?: boolean
   currentUserRole?: string
-  onUpdateTrainee?: (id: string, data: { notaRotacao?: number; rotacao?: number }) => void
+  onUpdateTrainee?: (id: string, data: { rotacao?: number }) => void
   onUpdateUser?: (id: string, data: any) => void
   onDeleteUser?: (id: string) => void
 }) {

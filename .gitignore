@@ -1,8 +1,8 @@
 node_modules
 # Keep environment variables out of version control
 .env
-
-/generated/prisma
+.env.local
+.env*.local
 
 # Python
 backend/.venv/
@@ -16,8 +16,20 @@ backend/app/__pycache__/
 
 # Next.js
 frontend/.next/
+frontend/.next-*/
 frontend/out/
 
-# Uploads
+# Uploads: a pasta é criada na inicialização por backend/app/main.py
 backend/uploads/
 
+# Editores e caches de ferramentas
+.DS_Store
+.vscode/
+.idea/
+*.swp
+.pytest_cache/
+**/.ruff_cache/
+
+# Planos e estado local de assistentes; documentação do produto fica em docs/.
+.claude/
+docs/PLANO_*.md

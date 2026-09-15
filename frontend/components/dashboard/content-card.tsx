@@ -14,11 +14,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { X, FileText, Video, Plus, Trash2, Upload, Loader2, Paperclip } from "lucide-react"
+import { responseError } from "@/lib/api-client"
 
 export interface ContentItem {
   id: string
   name: string
-  type: "membro" | "trainee" | "pluginfo"
+  type: "membro" | "trainee"
   eixo: string
   text?: string
   documents?: { name: string; url: string }[]
@@ -28,7 +29,7 @@ export interface ContentItem {
 interface ContentCardProps {
   content: ContentItem
   onClose: () => void
-  onSave: (content: ContentItem) => void
+  onSave: (content: ContentItem) => Promise<void>
   userType?: string
 }
 
@@ -37,6 +38,9 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
   const [newVideo, setNewVideo] = useState("")
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState("")
+  const savingRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -49,9 +53,24 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
     }
   }, [userType])
 
-  const handleSave = () => {
-    onSave(editedContent)
-    onClose()
+  const handleSave = async () => {
+    if (savingRef.current || uploading) return
+    if (!editedContent.name.trim()) {
+      setSaveError("Informe o nome do conteúdo.")
+      return
+    }
+    savingRef.current = true
+    setSaving(true)
+    setSaveError("")
+    try {
+      await onSave({ ...editedContent, name: editedContent.name.trim() })
+      onClose()
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Erro ao salvar material.")
+    } finally {
+      savingRef.current = false
+      setSaving(false)
+    }
   }
 
   // ---------- File upload ----------
@@ -77,8 +96,7 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
         })
 
         if (!res.ok) {
-          const err = await res.json()
-          setUploadError(err.detail || "Erro ao fazer upload do arquivo.")
+          setUploadError((await responseError(res)).message)
           break
         }
 
@@ -133,11 +151,12 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
         <CardTitle className="text-lg text-foreground">
           {content.id.startsWith("content-new-") ? "Adicionar Conteúdo" : "Editar Conteúdo"}
         </CardTitle>
-        <Button variant="ghost" size="icon" onClick={onClose}>
+        <Button variant="ghost" size="icon" onClick={onClose} disabled={saving || uploading}>
           <X className="h-4 w-4" />
         </Button>
       </CardHeader>
       <CardContent className="space-y-6">
+        <fieldset disabled={saving} className="space-y-6 min-w-0">
         {/* Nome do Conteúdo */}
         <div className="space-y-2">
           <Label htmlFor="content-name">Nome do Conteúdo</Label>
@@ -157,7 +176,7 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
             <Label>Tipo de Conteúdo</Label>
             <Select
               value={editedContent.type}
-              onValueChange={(value: "membro" | "trainee" | "pluginfo") => {
+              onValueChange={(value: "membro" | "trainee") => {
                 setEditedContent({
                   ...editedContent,
                   type: value,
@@ -344,12 +363,16 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
         </div>
 
         {/* Botões de Ação */}
+        {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
         <div className="flex justify-end gap-2 pt-4 border-t border-border">
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={saving || uploading}>
             Cancelar
           </Button>
-          <Button onClick={handleSave} disabled={uploading}>Salvar Alterações</Button>
+          <Button onClick={handleSave} disabled={saving || uploading}>
+            {saving ? "Salvando..." : "Salvar Alterações"}
+          </Button>
         </div>
+        </fieldset>
       </CardContent>
     </Card>
   )
