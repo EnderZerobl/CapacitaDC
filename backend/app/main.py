@@ -11,10 +11,8 @@ Business logic lives in app/services/*.py
 HTTP routing lives in app/api/*.py
 """
 
-from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.database import engine
 from app import models
@@ -36,13 +34,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Static files ──────────────────────────────────────────────────────────────
-
-UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
-
 # ── Routers ───────────────────────────────────────────────────────────────────
+# Uploaded files are served through app.api.grades (GET /api/uploads/{pathname})
+# and app.api.activities, both backed by private Vercel Blob storage — compute
+# here is stateless, so there is no local directory to mount.
 
 app.include_router(auth.router,       prefix="/api/auth",       tags=["auth"])
 app.include_router(users.router,      prefix="/api/users",      tags=["users"])

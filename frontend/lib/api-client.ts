@@ -75,6 +75,17 @@ async function request<T>(
   return res.text() as unknown as Promise<T>
 }
 
+// Uploaded files live in private Blob storage, so a plain <a href> can't
+// reach them — the request needs the bearer token, hence a fetch + object URL.
+export async function openAuthenticatedFile(url: string): Promise<void> {
+  const token = getToken()
+  const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+  if (!response.ok) throw await responseError(response)
+  const objectUrl = URL.createObjectURL(await response.blob())
+  window.open(objectUrl, "_blank", "noopener,noreferrer")
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 30000)
+}
+
 export const apiClient = {
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
 

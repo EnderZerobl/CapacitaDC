@@ -20,20 +20,23 @@ def main():
         os.environ['JWT_SECRET_KEY'] = 'disposable-browser-tests-only'
         sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
         from app.main import app
-        from app.api import grades, activities
         from app.database import SessionLocal, engine
         from app import models
         from app.auth import get_password_hash
-        from fastapi.staticfiles import StaticFiles
+        from app.services import blob_storage
         import uvicorn
 
-        uploads = Path(directory) / 'uploads'
-        uploads.mkdir()
-        grades.UPLOAD_DIR = uploads
-        activities.SUBMISSION_UPLOAD_DIR = Path(directory) / "submission_uploads"
-        for route in app.routes:
-            if getattr(route, 'path', '') == '/uploads':
-                route.app = StaticFiles(directory=str(uploads))
+        # No real Vercel Blob store for disposable browser tests: an in-memory
+        # dict stands in for it for the life of this one process.
+        store: dict[str, bytes] = {}
+
+        def fake_upload(pathname, data, content_type=None):
+            store[pathname] = data
+            return pathname
+
+        blob_storage.upload = fake_upload
+        blob_storage.download = store.get
+        blob_storage.delete = lambda pathname: store.pop(pathname, None)
         with SessionLocal() as db:
             for role in ['admin', 'organizador', 'membro', 'trainee']:
                 db.add(models.User(

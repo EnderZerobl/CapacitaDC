@@ -2,16 +2,16 @@
 api/grades.py — Grades, leaderboard and file upload endpoints.
 """
 
+import mimetypes
 import uuid
-from pathlib import Path
 from typing import List, Literal, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
 from app.auth import get_current_user, get_current_organizador_or_admin
-from app.services import access
+from app.services import access, blob_storage
 from app.services.activity_service import submission_to_out
 
 router = APIRouter()
@@ -23,7 +23,7 @@ ALLOWED_EXTENSIONS = {
     "png", "jpg", "jpeg", "gif", "webp", "zip", "txt", "csv",
 }
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
-UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads"
+MATERIAL_BLOB_PREFIX = "materials"
 
 
 @router.post("/upload")
@@ -31,7 +31,8 @@ async def upload_file(
     file: UploadFile = File(...),
     current_user: models.User = Depends(get_current_organizador_or_admin),
 ):
-    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    name = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400, detail=f"Tipo de arquivo .{ext} não permitido."
@@ -41,12 +42,32 @@ async def upload_file(
     if len(contents) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="Arquivo muito grande. Limite: 20 MB.")
 
-    safe_name = f"{uuid.uuid4().hex}_{file.filename.replace(' ', '_')}"
-    dest = UPLOAD_DIR / safe_name
-    with open(dest, "wb") as f:
-        f.write(contents)
+    safe_name = f"{uuid.uuid4().hex}_{name.replace(' ', '_')}"
+    pathname = blob_storage.upload(
+        f"{MATERIAL_BLOB_PREFIX}/{safe_name}", contents, content_type=mimetypes.guess_type(name)[0],
+    )
+    return {"url": f"/api/uploads/{pathname}", "name": file.filename}
 
-    return {"url": f"/uploads/{safe_name}", "name": file.filename}
+
+@router.get("/uploads/{pathname:path}")
+def download_uploaded_file(
+    pathname: str,
+    current_user: models.User = Depends(get_current_user),
+):
+    """Serves both material documents and any other /api/upload file.
+
+    Requires only a logged-in user: the legacy static /uploads mount this
+    replaces had no auth at all, so this is strictly tighter, not scoped
+    per-material — the private Blob store already keeps it off the open web.
+    """
+    data = blob_storage.download(pathname)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    content_type = mimetypes.guess_type(pathname)[0] or "application/octet-stream"
+    return Response(content=data, media_type=content_type, headers={
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store",
+    })
 
 
 # ── Leaderboard ───────────────────────────────────────────────────────────────

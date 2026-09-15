@@ -1,8 +1,6 @@
 """Attachment permissions, limits, persistence and correction metadata."""
 import asyncio
 from io import BytesIO
-from pathlib import Path
-from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
@@ -11,6 +9,7 @@ from sqlalchemy import text
 import test_creation
 from app import models
 from app.api import activities
+from app.services import blob_storage
 from app.migrations import migrate
 
 
@@ -19,9 +18,16 @@ class SubmissionAttachmentTests(unittest.TestCase):
         self.api = test_creation.CreationTests()
         self.api.setUp()
         self.request, self.create = self.api.request, self.api.create
-        self.directory = TemporaryDirectory()
-        self.storage = patch.object(activities, 'SUBMISSION_UPLOAD_DIR', Path(self.directory.name))
-        self.storage.start()
+        self.store: dict[str, bytes] = {}
+        self.upload_patch = patch.object(
+            blob_storage, 'upload',
+            side_effect=lambda pathname, data, content_type=None: self.store.__setitem__(pathname, data) or pathname,
+        )
+        self.download_patch = patch.object(blob_storage, 'download', side_effect=self.store.get)
+        self.delete_patch = patch.object(blob_storage, 'delete', side_effect=lambda pathname: self.store.pop(pathname, None))
+        self.upload_patch.start()
+        self.download_patch.start()
+        self.delete_patch.start()
         with self.api.sessions() as db:
             for role in ['trainee', 'other']:
                 db.add(models.User(id=role, name=role, email=f'{role}@example.com', password_hash='unused', cargo='trainee', type='trainee'))
@@ -30,8 +36,9 @@ class SubmissionAttachmentTests(unittest.TestCase):
         self.node = self.create('nodes', {'type': 'activity', 'eixo': 'trainee', 'activity_id': self.activity['id'], 'is_released': True})
 
     def tearDown(self):
-        self.storage.stop()
-        self.directory.cleanup()
+        self.upload_patch.stop()
+        self.download_patch.stop()
+        self.delete_patch.stop()
         self.api.tearDown()
 
     def upload(self, filename='resposta.pdf', data=b'%PDF-1.4\ntest', role='trainee'):
@@ -61,7 +68,7 @@ class SubmissionAttachmentTests(unittest.TestCase):
         with self.api.sessions() as db:
             for role in ['trainee', 'admin', 'organizador']:
                 response = activities.download_submission_attachment(self.activity['id'], attachment, db, db.get(models.User, role))
-                self.assertEqual(Path(response.path).read_bytes(), b'%PDF-1.4\ntest')
+                self.assertEqual(response.body, b'%PDF-1.4\ntest')
             with self.assertRaises(HTTPException) as error:
                 activities.download_submission_attachment(self.activity['id'], attachment, db, db.get(models.User, 'other'))
             self.assertEqual(error.exception.status_code, 403)
@@ -75,11 +82,11 @@ class SubmissionAttachmentTests(unittest.TestCase):
         attachment = self.upload()
         status, result = self.submit(attachment_ids=[attachment])
         self.assertEqual(status, 200, result)
-        self.assertEqual(len(list(Path(self.directory.name).iterdir())), 1)
+        self.assertEqual(len(self.store), 1)
 
         status, body = self.request('DELETE', f"/api/activities/{self.activity['id']}/submissions/{result['id']}")
         self.assertEqual(status, 200, body)
-        self.assertEqual(list(Path(self.directory.name).iterdir()), [])
+        self.assertEqual(self.store, {})
         with self.api.sessions() as db:
             self.assertIsNone(db.get(models.SubmissionAttachment, attachment))
 
@@ -97,7 +104,7 @@ class SubmissionAttachmentTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as error:
                 self.upload(data=b'x' * 11)
             self.assertEqual(error.exception.status_code, 413)
-        self.assertEqual(len(list(Path(self.directory.name).iterdir())), 1)
+        self.assertEqual(len(self.store), 1)
 
     def test_locked_or_closed_activity_cannot_receive_files(self):
         self.request('PATCH', f"/api/nodes/{self.node['id']}/release", {'is_released': False})
@@ -109,7 +116,7 @@ class SubmissionAttachmentTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as error:
             self.upload()
         self.assertEqual(error.exception.status_code, 400)
-        self.assertEqual(list(Path(self.directory.name).iterdir()), [])
+        self.assertEqual(self.store, {})
 
     def test_migration_preserves_legacy_link_and_grade(self):
         with self.api.engine.begin() as connection:

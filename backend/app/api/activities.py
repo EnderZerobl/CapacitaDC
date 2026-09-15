@@ -5,14 +5,14 @@ api/activities.py — Activity & submission endpoints (/api/activities/*)
 import uuid
 from typing import List
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import FileResponse
-from pathlib import Path
+from urllib.parse import quote
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
 from app.auth import get_current_user, get_current_organizador_or_admin
+from app.services import blob_storage
 from app.services.node_service import blocked_content_ids
 from app.services.activity_service import (
     activity_weight, graded_user_ids, is_effectively_open,
@@ -28,7 +28,7 @@ from app.services.access import (
 
 router = APIRouter()
 
-SUBMISSION_UPLOAD_DIR = Path(__file__).resolve().parents[2] / "submission_uploads"
+SUBMISSION_BLOB_PREFIX = "submissions"
 MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024
 ATTACHMENT_EXTENSIONS = {"pdf", "doc", "docx", "odt", "xls", "xlsx", "ods", "ppt", "pptx", "odp", "png", "jpg", "jpeg", "gif", "webp", "zip", "txt", "csv"}
 
@@ -62,17 +62,16 @@ async def upload_submission_attachment(
     if not data:
         raise HTTPException(400, "O arquivo está vazio.")
     attachment = models.SubmissionAttachment(id=str(uuid.uuid4()), activity_id=activity_id,
-        user_id=current_user.id, name=name, size=len(data), storage_key=f"{uuid.uuid4().hex}.{extension}")
-    SUBMISSION_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    destination = SUBMISSION_UPLOAD_DIR / attachment.storage_key
+        user_id=current_user.id, name=name, size=len(data),
+        storage_key=f"{SUBMISSION_BLOB_PREFIX}/{uuid.uuid4().hex}.{extension}")
     try:
-        destination.write_bytes(data)
+        attachment.storage_key = blob_storage.upload(attachment.storage_key, data)
         db.add(attachment)
         db.commit()
         db.refresh(attachment)
     except Exception:
         db.rollback()
-        destination.unlink(missing_ok=True)
+        blob_storage.delete(attachment.storage_key)
         raise
     return attachment
 
@@ -93,11 +92,15 @@ def download_submission_attachment(
         owner = db.get(models.User, attachment.user_id)
         if current_user.type == "organizador" and owner.type != "trainee":
             raise HTTPException(403, "Você não tem acesso a este anexo.")
-    path = SUBMISSION_UPLOAD_DIR / attachment.storage_key
-    if not path.is_file():
+    data = blob_storage.download(attachment.storage_key)
+    if data is None:
         raise HTTPException(404, "Arquivo não encontrado")
-    return FileResponse(path, filename=attachment.name, media_type="application/octet-stream",
-                        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"})
+    safe_name = attachment.name.replace('"', "'")
+    return Response(content=data, media_type="application/octet-stream", headers={
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store",
+        "Content-Disposition": f"attachment; filename=\"{safe_name}\"; filename*=UTF-8''{quote(attachment.name)}",
+    })
 
 
 
@@ -436,7 +439,7 @@ def delete_submission(
 
     user_id = submission.user_id
     for attachment in list(submission.attachments):
-        (SUBMISSION_UPLOAD_DIR / attachment.storage_key).unlink(missing_ok=True)
+        blob_storage.delete(attachment.storage_key)
         db.delete(attachment)
 
     node_ids = [row[0] for row in db.query(models.TrainingNode.id).filter(

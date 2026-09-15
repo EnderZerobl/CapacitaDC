@@ -13,6 +13,7 @@ import {
   ChevronUp,
   Download,
 } from "lucide-react"
+import { openAuthenticatedFile } from "@/lib/api-client"
 import { type ContentItem, eixoLabels, eixoColors } from "@/lib/content-data"
 
 interface ViewContentCardProps {
@@ -21,6 +22,7 @@ interface ViewContentCardProps {
 
 export function ViewContentCard({ content }: ViewContentCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [openError, setOpenError] = useState("")
 
   // Extract a friendly label from a video URL
   const getVideoLabel = (url: string, index: number): string => {
@@ -102,12 +104,11 @@ export function ViewContentCard({ content }: ViewContentCardProps) {
                 </h4>
                 <div className="space-y-2">
                   {content.documents.map((doc, index) => (
-                    <a
+                    <button
                       key={index}
-                      href={doc.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-3 p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors group"
+                      type="button"
+                      onClick={() => void openAuthenticatedFile(doc.url).catch(() => setOpenError("Não foi possível abrir o documento."))}
+                      className="flex w-full items-center gap-3 p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors group text-left"
                     >
                       <div className="h-8 w-8 rounded bg-primary/20 flex items-center justify-center">
                         <FileText className="h-4 w-4 text-primary" />
@@ -116,9 +117,10 @@ export function ViewContentCard({ content }: ViewContentCardProps) {
                         {doc.name}
                       </span>
                       <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                    </a>
+                    </button>
                   ))}
                 </div>
+                {openError && <p role="alert" className="text-xs text-destructive">{openError}</p>}
               </div>
             </>
           )}

@@ -10,6 +10,10 @@ discovery (which collects `test*.py`).
 
 The database path is used only to grant the test accounts their roles, which the
 public registration route deliberately refuses to do.
+
+check_upload() writes to real private Vercel Blob storage, so the uvicorn process
+also needs BLOB_READ_WRITE_TOKEN (or to run where OIDC is available) set in its
+environment.
 """
 
 import io
@@ -128,11 +132,13 @@ def check_creation_routes(admin):
 
 def check_upload(admin):
     sent = client.post("/api/upload", files={"file": ("smoke.txt", io.BytesIO(b"arquivo de teste"), "text/plain")}, headers=admin)
-    check("upload multipart pelo proxy", sent.status_code == 200 and sent.json().get("url", "").startswith("/uploads/"), sent.text[:200])
+    check("upload multipart pelo proxy", sent.status_code == 200 and sent.json().get("url", "").startswith("/api/uploads/"), sent.text[:200])
     if sent.status_code != 200:
         return
-    served = client.get(sent.json()["url"])
+    served = client.get(sent.json()["url"], headers=admin)
     check("arquivo enviado é servido pelo proxy", served.status_code == 200 and served.content == b"arquivo de teste", str(served.status_code))
+    anonymous = client.get(sent.json()["url"])
+    check("proxy exige autenticação", anonymous.status_code in (401, 403), str(anonymous.status_code))
 
 
 QUIZ = {"questions": [

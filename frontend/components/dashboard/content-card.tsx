@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { X, FileText, Video, Plus, Trash2, Upload, Loader2, Paperclip } from "lucide-react"
-import { responseError } from "@/lib/api-client"
+import { openAuthenticatedFile, responseError } from "@/lib/api-client"
 
 export interface ContentItem {
   id: string
@@ -275,15 +275,14 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
                 className="flex items-center gap-2 p-2 bg-muted rounded-lg"
               >
                 <FileText className="h-4 w-4 text-primary shrink-0" />
-                <a
-                  href={doc.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 text-sm truncate text-primary hover:underline"
+                <button
+                  type="button"
+                  onClick={() => void openAuthenticatedFile(doc.url).catch(() => setUploadError("Não foi possível abrir o documento."))}
+                  className="flex-1 truncate text-left text-sm text-primary hover:underline"
                   title={doc.name}
                 >
                   {doc.name}
-                </a>
+                </button>
                 <Button
                   variant="ghost"
                   size="icon"

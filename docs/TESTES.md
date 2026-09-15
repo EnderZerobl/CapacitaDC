@@ -87,7 +87,7 @@ Verifica PDF e CSV via multipart, limites de quantidade/tamanho/formato, campos 
 
 ## Upload e proxy
 
-`backend/tests/live_smoke.py` verifica a API através do proxy Next.js, incluindo upload multipart e leitura do arquivo. Ele recebe o caminho SQLite que o servidor de teste imprime:
+`backend/tests/live_smoke.py` verifica a API através do proxy Next.js, incluindo upload multipart e leitura do arquivo. O upload grava num Vercel Blob privado de verdade, então o processo da API também precisa de `BLOB_READ_WRITE_TOKEN` no ambiente. Ele recebe o caminho SQLite que o servidor de teste imprime:
 
 ```bash
 backend/.venv/bin/python backend/tests/live_smoke.py /tmp/caminho-impresso/database.db http://127.0.0.1:3017

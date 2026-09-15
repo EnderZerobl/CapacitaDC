@@ -75,7 +75,7 @@ Reordenar muda a sequência implícita. Excluir ou alterar conteúdos já usados
 
 O formulário apresenta **anexos → links → comentários**. Cada entrega aceita até 5 anexos, com até 20 MB por arquivo, até 10 links HTTP/HTTPS e um comentário de até 5.000 caracteres. Os formatos aceitos são PDF, DOC/DOCX/ODT, XLS/XLSX/ODS, PPT/PPTX/ODP, PNG/JPG/JPEG/GIF/WEBP, TXT, CSV e ZIP. Se a atividade exige arquivo, um link não substitui o anexo obrigatório.
 
-Os participantes enviam arquivos por `POST /api/activities/{id}/attachments` e informam seus IDs ao entregar a atividade. A API verifica o autor, a atividade, a liberação da etapa e os limites. Os anexos ficam em `backend/submission_uploads/`, fora da pasta pública, e são baixados por uma rota autenticada pelo autor ou pelos gestores autorizados após a entrega. Eles aparecem na entrega, na fila de correções e no perfil. Alterar anexos, links ou comentário invalida a correção anterior, como já ocorria ao alterar a resposta.
+Os participantes enviam arquivos por `POST /api/activities/{id}/attachments` e informam seus IDs ao entregar a atividade. A API verifica o autor, a atividade, a liberação da etapa e os limites. Os anexos ficam num Vercel Blob privado (não em disco local, incompatível com o compute stateless da Vercel), e são baixados por uma rota autenticada pelo autor ou pelos gestores autorizados após a entrega. Eles aparecem na entrega, na fila de correções e no perfil. Alterar anexos, links ou comentário invalida a correção anterior, como já ocorria ao alterar a resposta.
 
 A migração 5 adiciona a lista de links e a tabela de anexos, preservando links e notas das entregas antigas. A pasta privada de anexos também precisa de armazenamento persistente e backup.
 
@@ -143,7 +143,7 @@ Rotas principais (consulte `/docs` na API para o contrato completo):
 | Conteúdo da etapa | `GET /api/nodes/{id}/content`, `PATCH /api/nodes/{id}/activity` |
 | Jogos | `GET/POST /api/games`, edição, duplicação, publicação e versões por ID |
 | Tentativas | `POST /api/nodes/{id}/attempts`, leitura e respostas/conclusão em `/api/game-attempts/{id}` |
-| Arquivos | `POST /api/upload`, leitura em `/uploads/{arquivo}` |
+| Arquivos | `POST /api/upload`, leitura autenticada em `GET /api/uploads/{pathname}` |
 
 As coleções aceitam as formas de URL utilizadas no frontend sem redirecionar a autenticação. As sessões novas usam ID de usuário estável no token. Respostas 401 significam sessão inválida, 403 falta de permissão, 422 erro de validação e 5xx falha do servidor. Erro temporário de `/auth/me` não apaga a sessão.
 
@@ -156,6 +156,6 @@ As migrações rodam na inicialização da API e registram versões em `schema_m
 3. Conversão do antigo conteúdo `pluginfo` para `trainee`. Etapas convertidas são colocadas após as existentes e bloqueadas; o papel organizador é preservado.
 4. Garantia da coluna de peso, backup das notas manuais antigas em `nota_rotacao_backup_v4` e recálculo das médias pelas entregas corrigidas.
 
-Antes de atualizar uma instalação, faça backup do PostgreSQL e dos uploads. Bancos, senhas, uploads e caches não pertencem ao Git. Os testes automatizados exercitam as migrações em SQLite; a migração do ambiente PostgreSQL deve ser validada em uma cópia antes de aplicar em produção.
+Antes de atualizar uma instalação, faça backup do PostgreSQL; os uploads vivem num Vercel Blob privado, fora do banco. Bancos, senhas, tokens e caches não pertencem ao Git. Os testes automatizados exercitam as migrações em SQLite; a migração do ambiente PostgreSQL deve ser validada em uma cópia antes de aplicar em produção.
 
 A recuperação automática de senha ainda não está implementada. A plataforma não envia emails de recuperação. A configuração de hospedagem e os comandos de desenvolvimento ficam no [README](../README.md); os procedimentos de verificação estão em [TESTES.md](TESTES.md).
