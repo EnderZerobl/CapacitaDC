@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
-from app.auth import get_current_user, get_current_organizador_or_admin
-from app.services import blob_storage
-from app.services.node_service import blocked_content_ids
+from app.auth import get_current_user, get_current_staff
+from app.services import blob_storage, access
+from app.services.roles import STAFF
+from app.services.node_service import blocked_activity_ids
 from app.services.activity_service import (
     activity_weight, graded_user_ids, is_effectively_open,
     recompute_user_grade, recompute_users_grades, submission_to_out,
@@ -86,10 +87,11 @@ def download_submission_attachment(
         raise HTTPException(404, "Anexo não encontrado")
     activity = db.get(models.Activity, activity_id)
     if current_user.id != attachment.user_id:
-        if current_user.type not in {"admin", "organizador"} or not attachment.submission_id:
+        if current_user.type not in STAFF or not attachment.submission_id:
             raise HTTPException(403, "Você não tem acesso a este anexo.")
         ensure_activity_access(current_user, activity, manage=True)
         owner = db.get(models.User, attachment.user_id)
+        access.ensure_user_access(current_user, owner)
         if current_user.type == "organizador" and owner.type != "trainee":
             raise HTTPException(403, "Você não tem acesso a este anexo.")
     data = blob_storage.download(attachment.storage_key)
@@ -110,7 +112,7 @@ def _validate_material_link(db: Session, user: models.User, material_id: str | N
     material = db.query(models.Material).filter(models.Material.id == material_id).first()
     if material is None:
         raise HTTPException(status_code=404, detail="Material não encontrado")
-    ensure_material_access(user, material)
+    ensure_material_access(user, material, manage=True)
 
 
 def _submission_nodes(
@@ -171,7 +173,7 @@ def get_activities(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    is_privileged = current_user.type in ["admin", "organizador"]
+    is_privileged = current_user.type in STAFF
 
     allowed_eixos = allowed_activity_eixos(current_user)
 
@@ -184,13 +186,17 @@ def get_activities(
             models.Activity.created_at.desc()
         ).all()
 
-    _, blocked_activities = blocked_content_ids(db, current_user)
+    blocked_activities = blocked_activity_ids(db, current_user)
+    followed = access.managed_user_ids(db, current_user) if current_user.type == "gerente" else None
     result = []
     for act in activities:
         if act.id in blocked_activities:
             continue
         effective_open = is_effectively_open(act)
-        submission_count = len(act.submissions)
+        # O gerente conta só as entregas das pessoas que ele acompanha.
+        submission_count = len(act.submissions) if followed is None else sum(
+            sub.user_id in followed for sub in act.submissions
+        )
 
         my_submission = None
         if not is_privileged:
@@ -222,7 +228,7 @@ def get_activities(
 def create_activity(
     activity_in: schemas.ActivityCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     ensure_node_eixo_access(current_user, activity_in.eixo)
     _validate_material_link(db, current_user, activity_in.material_id)
@@ -266,14 +272,17 @@ def update_activity(
     activity_id: str,
     update_data: schemas.ActivityUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     activity = db.query(models.Activity).filter(models.Activity.id == activity_id).first()
     if not activity:
         raise HTTPException(status_code=404, detail="Atividade não encontrada")
     ensure_activity_access(current_user, activity, manage=True)
+    access.ensure_contained_in_axis(db, current_user, activity)
     if "material_id" in update_data.model_fields_set:
         _validate_material_link(db, current_user, update_data.material_id)
+    if update_data.weight is not None and update_data.weight != activity.weight:
+        access.ensure_no_foreign_submissions(current_user, activity)
 
     if update_data.is_open is not None:
         activity.is_open = update_data.is_open
@@ -309,7 +318,7 @@ def update_activity(
         created_at=activity.created_at,
         material_id=activity.material_id,
         effective_open=is_effectively_open(activity),
-        submission_count=len(activity.submissions),
+        submission_count=sum(access.can_manage_user(current_user, sub.user) for sub in activity.submissions),
         my_submission=None,
     )
 
@@ -318,12 +327,14 @@ def update_activity(
 def delete_activity(
     activity_id: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     activity = db.query(models.Activity).filter(models.Activity.id == activity_id).first()
     if not activity:
         raise HTTPException(status_code=404, detail="Atividade não encontrada")
     ensure_activity_access(current_user, activity, manage=True)
+    access.ensure_contained_in_axis(db, current_user, activity)
+    access.ensure_no_foreign_submissions(current_user, activity)
     affected = graded_user_ids(db, activity.id)
     db.delete(activity)
     db.commit()
@@ -336,7 +347,7 @@ def delete_activity(
 def get_activity_submissions(
     activity_id: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     activity = db.query(models.Activity).filter(models.Activity.id == activity_id).first()
     if not activity:
@@ -344,7 +355,7 @@ def get_activity_submissions(
     ensure_activity_access(current_user, activity, manage=True)
 
     return [submission_to_out(sub, activity=activity) for sub in activity.submissions
-            if sub.user and (current_user.type == "admin" or sub.user.type == "trainee")]
+            if access.can_manage_user(current_user, sub.user)]
 
 
 @router.post("/{activity_id}/submit", response_model=schemas.ActivitySubmissionOut)
@@ -417,7 +428,7 @@ def delete_submission(
     activity_id: str,
     submission_id: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     """Remove one delivery so the queue can be cleaned up (tests, duplicates, mistakes).
 
@@ -434,6 +445,7 @@ def delete_submission(
     ).first()
     if not submission:
         raise HTTPException(status_code=404, detail="Submissão não encontrada")
+    access.ensure_user_access(current_user, submission.user)
     if current_user.type == "organizador" and (not submission.user or submission.user.type != "trainee"):
         raise HTTPException(status_code=403, detail="Organizadores só podem excluir entregas de trainees.")
 
@@ -468,7 +480,7 @@ def grade_submission(
     submission_id: str,
     grade_data: schemas.SubmissionGrade,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     activity = db.query(models.Activity).filter(models.Activity.id == activity_id).first()
     if activity is None:
@@ -480,6 +492,7 @@ def grade_submission(
     ).first()
     if not submission:
         raise HTTPException(status_code=404, detail="Submissão não encontrada")
+    access.ensure_user_access(current_user, submission.user)
     if current_user.type == "organizador" and (not submission.user or submission.user.type != "trainee"):
         raise HTTPException(status_code=403, detail="Organizadores só podem corrigir entregas de trainees.")
 

@@ -1,9 +1,10 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
-import { responseError } from "./api-client"
+import { ACCESS_DENIED_EVENT, responseError } from "./api-client"
+import type { UserRole } from "./roles"
 
-export type UserType = "admin" | "organizador" | "membro" | "trainee"
+export type UserType = UserRole
 
 export interface User {
   id: string
@@ -52,8 +53,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     if (!res.ok) throw await responseError(res)
     const userData = await res.json()
-    setUser(userData)
-    localStorage.setItem("currentUser", JSON.stringify(userData))
+    const serialized = JSON.stringify(userData)
+    // Mesmo conteúdo, mesmo objeto: conferir a sessão não dispara efeitos à toa.
+    setUser(previous => previous && JSON.stringify(previous) === serialized ? previous : userData)
+    localStorage.setItem("currentUser", serialized)
   }, [logout])
 
   useEffect(() => {
@@ -69,6 +72,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshUser()
       .catch(error => console.error("Erro ao validar sessão:", error))
       .finally(() => setIsLoading(false))
+  }, [refreshUser])
+
+  // O administrador pode trocar o papel ou o eixo de quem já está logado. A sessão
+  // é conferida ao voltar para a aba e depois de uma recusa da API; se mudou, as
+  // telas que dependem do papel se recriam a partir do usuário atualizado.
+  useEffect(() => {
+    const check = () => {
+      refreshUser().catch(error => console.error("Erro ao validar sessão:", error))
+    }
+    const onVisible = () => { if (document.visibilityState === "visible") check() }
+    document.addEventListener("visibilitychange", onVisible)
+    window.addEventListener(ACCESS_DENIED_EVENT, check)
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible)
+      window.removeEventListener(ACCESS_DENIED_EVENT, check)
+    }
   }, [refreshUser])
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string; user?: User }> => {

@@ -21,9 +21,10 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { UserPlus, Eye, EyeOff } from "lucide-react"
+import { memberAxisLabels, type MemberAxis } from "@/lib/roles"
 
-type Cargo = "admin" | "organizador" | "membro" | "trainee"
-type Eixo = "vendas" | "conexoes" | "experiencia"
+type Cargo = "admin" | "organizador" | "gerente" | "membro" | "trainee"
+type Eixo = MemberAxis
 
 interface MemberFormData {
   name: string
@@ -36,9 +37,14 @@ interface MemberFormData {
 interface MemberFormProps {
   onSubmit: (data: MemberFormData) => void | Promise<void>
   userType?: string
+  /** Eixo do gerente logado: ele só cadastra membros desse eixo. */
+  managerAxis?: MemberAxis | null
 }
 
-export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
+// Perfis que pertencem a um eixo e, por isso, exigem a escolha dele.
+const needsAxis = (cargo: Cargo | "") => cargo === "membro" || cargo === "gerente"
+
+export function MemberForm({ onSubmit, userType = "admin", managerAxis = null }: MemberFormProps) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
@@ -49,20 +55,23 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
-  // Automatically select trainee for organizador
+  // Organizador cadastra trainees; gerente, membros do próprio eixo.
   useEffect(() => {
     if (userType === "organizador") {
       setCargo("trainee")
       setEixo("")
+    } else if (managerAxis) {
+      setCargo("membro")
+      setEixo(managerAxis)
     }
-  }, [userType, open])
+  }, [userType, managerAxis, open])
 
   const resetForm = () => {
     setName("")
     setEmail("")
     setPassword("")
-    setCargo(userType === "organizador" ? "trainee" : "")
-    setEixo("")
+    setCargo(userType === "organizador" ? "trainee" : managerAxis ? "membro" : "")
+    setEixo(managerAxis ?? "")
     setErrors({})
   }
 
@@ -89,8 +98,8 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
       newErrors.cargo = "Cargo é obrigatório"
     }
 
-    if (cargo === "membro" && !eixo) {
-      newErrors.eixo = "Eixo é obrigatório para membros"
+    if (needsAxis(cargo) && !eixo) {
+      newErrors.eixo = cargo === "gerente" ? "Escolha o eixo que o gerente vai administrar" : "Eixo é obrigatório para membros"
     }
 
     setErrors(newErrors)
@@ -107,7 +116,7 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
       email: email.trim(),
       cargo: cargo as Cargo,
       password: password,
-      ...(cargo === "membro" && eixo ? { eixo: eixo as Eixo } : {}),
+      ...(needsAxis(cargo) && eixo ? { eixo: eixo as Eixo } : {}),
     }
 
     setSubmitting(true)
@@ -142,7 +151,8 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
       <DialogContent className="sm:max-w-md bg-card border-border">
         <DialogHeader>
           <DialogTitle className="text-foreground">
-            {userType === "organizador" ? "Cadastrar Novo Trainee" : "Cadastrar Novo Membro"}
+            {userType === "organizador" ? "Cadastrar Novo Trainee"
+              : managerAxis ? `Cadastrar Membro — ${memberAxisLabels[managerAxis]}` : "Cadastrar Novo Membro"}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             Preencha as informações para cadastrar um novo perfil no sistema.
@@ -216,7 +226,19 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
           </div>
 
           {/* Cargo */}
-          {userType !== "organizador" && (
+          {managerAxis && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="cargo-locked" className="text-foreground">Cargo</Label>
+                <Input id="cargo-locked" value="Membro" disabled className="bg-secondary border-border" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="eixo-locked" className="text-foreground">Eixo</Label>
+                <Input id="eixo-locked" value={memberAxisLabels[managerAxis]} disabled className="bg-secondary border-border" />
+              </div>
+            </div>
+          )}
+          {userType !== "organizador" && !managerAxis && (
             <div className="space-y-2">
               <Label htmlFor="cargo" className="text-foreground">
                 Cargo
@@ -236,6 +258,7 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
                 <SelectContent>
                   <SelectItem value="admin">Administrador</SelectItem>
                   <SelectItem value="organizador">Organizador do PlugInfo</SelectItem>
+                  <SelectItem value="gerente">Gerente de eixo</SelectItem>
                   <SelectItem value="membro">Membro</SelectItem>
                   <SelectItem value="trainee">Trainee</SelectItem>
                 </SelectContent>
@@ -246,11 +269,11 @@ export function MemberForm({ onSubmit, userType = "admin" }: MemberFormProps) {
             </div>
           )}
 
-          {/* Eixo - apenas se cargo for "membro" */}
-          {cargo === "membro" && (
+          {/* Eixo - membros e gerentes pertencem a um eixo */}
+          {needsAxis(cargo) && !managerAxis && (
             <div className="space-y-2">
               <Label htmlFor="eixo" className="text-foreground">
-                Eixo
+                {cargo === "gerente" ? "Eixo administrado" : "Eixo"}
               </Label>
               <Select
                 value={eixo}

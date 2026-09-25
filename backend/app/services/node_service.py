@@ -12,6 +12,7 @@ from fastapi import HTTPException
 
 from app import models, schemas
 from app.services.access import allowed_node_eixos
+from app.services.roles import STAFF
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +57,7 @@ def unlock_map(db: Session, current_user, nodes) -> dict:
     Uma única fonte para a listagem da trilha e para a visibilidade de conteúdo,
     para as regras não divergirem entre as telas.
     """
-    if current_user.type in ("admin", "organizador"):
+    if current_user.type in STAFF:
         return {node.id: True for node in nodes}
     completed = {
         progress.node_id
@@ -73,38 +74,69 @@ def unlock_map(db: Session, current_user, nodes) -> dict:
     }
 
 
-def blocked_content_ids(db: Session, current_user) -> tuple[set, set]:
-    """Materiais e atividades que só existem atrás de etapas ainda fechadas.
+def open_content_ids(db: Session, current_user) -> tuple[set, set]:
+    """Materiais e atividades das etapas que a pessoa já alcançou na trilha.
 
-    Conteúdo fora da trilha continua visível: nunca esteve preso a uma etapa. Um
-    material alcançado por várias etapas aparece se qualquer uma delas estiver aberta.
+    Alcançar não é concluir: a etapa atual já libera o próprio material. Só contam
+    etapas das trilhas que a pessoa pode ver, e os vínculos são os mesmos da leitura
+    da etapa — numa etapa de atividade vale o material da atividade, e uma
+    referência direta antiga, substituída por ela, é ignorada.
     """
-    if current_user.type in ("admin", "organizador"):
-        return set(), set()
-    nodes = db.query(models.TrainingNode).order_by(
-        models.TrainingNode.order_index, models.TrainingNode.id,
-    ).all()
+    query = db.query(models.TrainingNode)
+    allowed = allowed_node_eixos(current_user)
+    if allowed is not None:
+        query = query.filter(models.TrainingNode.eixo.in_(allowed))
+    nodes = query.order_by(models.TrainingNode.order_index, models.TrainingNode.id).all()
     unlocked = unlock_map(db, current_user, nodes)
-    activity_material = dict(db.query(models.Activity.id, models.Activity.material_id).all())
+    reached = [node for node in nodes if unlocked[node.id] and node.type != "game"]
+    activity_ids = {node.activity_id or node.reference_id for node in reached
+                    if node.type == "activity" or node.activity_id} - {None}
+    activities = {
+        activity.id: activity
+        for activity in db.query(models.Activity).filter(models.Activity.id.in_(activity_ids)).all()
+    } if activity_ids else {}
 
-    referenced_materials, open_materials = set(), set()
-    referenced_activities, open_activities = set(), set()
-    for node in nodes:
-        materials = set()
-        if node.reference_id:
+    materials, open_activities = set(), set()
+    for node in reached:
+        if node.type == "activity" or node.activity_id:
+            activity = activities.get(node.activity_id or node.reference_id)
+            if activity is None or (allowed is not None and activity.eixo not in allowed):
+                continue
+            open_activities.add(activity.id)
+            if activity.material_id:
+                materials.add(activity.material_id)
+        elif node.reference_id:
             materials.add(node.reference_id)
-        if node.activity_id:
-            referenced_activities.add(node.activity_id)
-            if unlocked[node.id]:
-                open_activities.add(node.activity_id)
-            # O material também é alcançado pela atividade vinculada à etapa.
-            linked = activity_material.get(node.activity_id)
-            if linked:
-                materials.add(linked)
-        referenced_materials |= materials
-        if unlocked[node.id]:
-            open_materials |= materials
-    return referenced_materials - open_materials, referenced_activities - open_activities
+    return materials, open_activities
+
+
+def library_material_ids(db: Session, current_user) -> set | None:
+    """Materiais da biblioteca de um participante. None para quem administra.
+
+    Um material só aparece depois de alcançado por pelo menos uma etapa: material
+    avulso, ou só ligado a uma atividade fora da trilha, fica restrito à autoria.
+    """
+    if current_user.type in STAFF:
+        return None
+    materials, _ = open_content_ids(db, current_user)
+    return materials
+
+
+def blocked_activity_ids(db: Session, current_user) -> set:
+    """Atividades que só existem atrás de etapas ainda fechadas.
+
+    Atividade fora da trilha continua visível: nunca esteve presa a uma etapa. Uma
+    atividade alcançada por várias etapas aparece se qualquer uma delas estiver aberta.
+    """
+    if current_user.type in STAFF:
+        return set()
+    _, open_activities = open_content_ids(db, current_user)
+    linked = {
+        node.activity_id or node.reference_id
+        for node in db.query(models.TrainingNode).all()
+        if node.type == "activity" or node.activity_id
+    } - {None}
+    return linked - open_activities
 
 
 def list_nodes_for_user(
@@ -112,7 +144,7 @@ def list_nodes_for_user(
     current_user: models.User,
 ) -> List[schemas.TrainingNodeGraphOut]:
     """Return nodes visible to the current user, with progress and unlock state."""
-    is_privileged = current_user.type in ["admin", "organizador"]
+    is_privileged = current_user.type in STAFF
 
     query = db.query(models.TrainingNode)
     allowed = allowed_node_eixos(current_user)

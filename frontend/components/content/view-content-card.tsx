@@ -14,6 +14,7 @@ import {
   Download,
 } from "lucide-react"
 import { openAuthenticatedFile } from "@/lib/api-client"
+import { LinkedText, safeHref } from "@/components/content/linked-text"
 import { type ContentItem, eixoLabels, eixoColors } from "@/lib/content-data"
 
 interface ViewContentCardProps {
@@ -87,8 +88,8 @@ export function ViewContentCard({ content }: ViewContentCardProps) {
                 <FileText className="h-4 w-4" />
                 Conteúdo
               </h4>
-              <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
-                {content.text}
+              <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
+                <LinkedText text={content.text} />
               </p>
             </div>
           )}
@@ -135,10 +136,10 @@ export function ViewContentCard({ content }: ViewContentCardProps) {
                   Vídeos ({content.videos.length})
                 </h4>
                 <div className="space-y-2">
-                  {content.videos.map((video, index) => (
+                  {content.videos.filter(video => safeHref(video)).map((video, index) => (
                     <a
                       key={index}
-                      href={video}
+                      href={safeHref(video)!}
                       target="_blank"
                       rel="noopener noreferrer"
                       title={video}

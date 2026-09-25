@@ -5,6 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ExternalLink } from "lucide-react"
+import { axisLabel } from "@/lib/roles"
 
 interface MemberCardProps {
   id: string
@@ -38,7 +39,7 @@ export function MemberCard({ id, name, eixo, cargo, photo, showProfile = false }
             <h3 className="font-semibold text-foreground truncate">{name}</h3>
             <p className="text-sm text-muted-foreground truncate">{cargo}</p>
             <span className="inline-flex items-center px-2 py-0.5 mt-1 text-xs font-medium bg-primary/20 text-primary rounded-full">
-              {eixo}
+              {axisLabel(eixo)}
             </span>
             {showProfile && (
               <Button

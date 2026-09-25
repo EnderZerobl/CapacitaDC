@@ -3,6 +3,9 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
+import { openAuthenticatedFile } from "@/lib/api-client"
+import { LinkedText, safeHref } from "@/components/content/linked-text"
+import { axisLabel, isStaff } from "@/lib/roles"
 import { type ContentItem } from "@/lib/content-data"
 import { ViewContentCard } from "@/components/content/view-content-card"
 import { TrainingPath } from "@/components/dashboard/training-path"
@@ -65,7 +68,7 @@ export default function MembrosPage() {
     if (!isLoading) {
       if (!user) router.push("/login")
       else if (user.type === "trainee") router.push("/trainees")
-      else if (user.type === "admin" || user.type === "organizador") router.push("/")
+      else if (isStaff(user.type)) router.push("/")
       else fetchLeaderboard()
     }
   }, [user, isLoading, router])
@@ -156,7 +159,7 @@ export default function MembrosPage() {
                   <span className="hidden sm:inline font-medium">{user.name}</span>
                   {user.eixo && (
                     <Badge variant="secondary" className="text-xs bg-primary/10 border-primary/20 text-primary uppercase font-bold">
-                      {user.eixo}
+                      {axisLabel(user.eixo)}
                     </Badge>
                   )}
                   <Badge variant="outline" className="text-xs font-semibold">
@@ -327,7 +330,7 @@ export default function MembrosPage() {
                 {/* Texto */}
                 {activeMaterial?.text && (
                   <div className="prose prose-sm dark:prose-invert max-w-none bg-muted p-5 rounded-xl border border-border leading-relaxed text-sm text-foreground whitespace-pre-line font-medium">
-                    {activeMaterial?.text}
+                    <LinkedText text={activeMaterial.text} />
                   </div>
                 )}
 
@@ -339,10 +342,10 @@ export default function MembrosPage() {
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {/* Vídeos */}
-                      {activeMaterial?.videos?.map((vidUrl, i) => (
+                      {activeMaterial?.videos?.filter(vidUrl => safeHref(vidUrl)).map((vidUrl, i) => (
                         <a
                           key={i}
-                          href={vidUrl}
+                          href={safeHref(vidUrl)!}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center gap-3 p-3 bg-secondary rounded-xl hover:bg-secondary/80 border border-border text-xs font-semibold transition"
@@ -357,19 +360,20 @@ export default function MembrosPage() {
 
                       {/* Documentos */}
                       {activeMaterial?.documents?.map((doc, i) => (
-                        <a
+                        // Documentos enviados ficam em armazenamento privado: a abertura
+                        // passa pelo download autenticado, que confere o acesso à etapa.
+                        <button
                           key={i}
-                          href={doc.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-3 p-3 bg-secondary rounded-xl hover:bg-secondary/80 border border-border text-xs font-semibold transition"
+                          type="button"
+                          onClick={() => void openAuthenticatedFile(doc.url).catch(error => alert(error instanceof Error ? error.message : "Não foi possível abrir o documento."))}
+                          className="flex items-center gap-3 p-3 bg-secondary rounded-xl hover:bg-secondary/80 border border-border text-xs font-semibold transition text-left"
                         >
                           <div className="bg-primary/10 text-primary p-2 rounded-lg">
                             <FileText className="w-4 h-4" />
                           </div>
                           <span className="flex-1 truncate">{doc.name}</span>
                           <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
-                        </a>
+                        </button>
                       ))}
                     </div>
                   </div>

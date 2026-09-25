@@ -6,6 +6,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
+import { homePath } from "@/lib/roles"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -48,13 +49,7 @@ export default function CadastroPage() {
 
     if (result.success && result.user) {
       // Redirect based on user type returned from backend
-      if (result.user.type === "admin") {
-        router.push("/")
-      } else if (result.user.type === "membro") {
-        router.push("/membros")
-      } else {
-        router.push("/trainees")
-      }
+      router.push(homePath(result.user.type))
     } else {
       setError(result.error || "Erro ao cadastrar")
     }

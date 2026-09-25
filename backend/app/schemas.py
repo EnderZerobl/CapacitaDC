@@ -2,12 +2,14 @@ from typing import Optional, List, Literal
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, model_validator
 
+Role = Literal["admin", "organizador", "gerente", "membro", "trainee"]
+
 # --- User Schemas ---
 class UserBase(BaseModel):
     name: str
     email: EmailStr
     cargo: str
-    type: str  # "admin", "organizador", "membro", "trainee"
+    type: Role
     eixo: Optional[str] = None
     photo: Optional[str] = ""
 
@@ -32,7 +34,7 @@ class UserUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
     cargo: Optional[str] = None
-    type: Optional[str] = None
+    type: Optional[Role] = None
     eixo: Optional[str] = None
     password: Optional[str] = None
 

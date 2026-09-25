@@ -89,7 +89,8 @@ async function checkMaterialForm(browser) {
     await page.getByLabel("Nome do Conteúdo", { exact: true }).fill("Material de teste")
     await page.locator("#content-text").fill("Rascunho preservado após falha.")
     await page.getByRole("button", { name: "Salvar Alterações", exact: true }).click()
-    await page.getByText("Você não tem permissão para realizar esta ação.", { exact: true }).waitFor()
+    // A recusa mostra o motivo enviado pelo servidor.
+    await page.getByText("Permissão insuficiente", { exact: true }).waitFor()
     assert.equal(await page.getByLabel("Nome do Conteúdo", { exact: true }).inputValue(), "Material de teste")
     assert.equal(await page.locator("#content-text").inputValue(), "Rascunho preservado após falha.")
     assert.equal(submitted, 1)

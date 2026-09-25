@@ -106,6 +106,40 @@ def graded_user_ids(db: Session, activity_id: str) -> list[str]:
     return [user_id for (user_id,) in rows]
 
 
+def axis_metrics(db: Session, user_id: str, eixos: set[str]) -> dict:
+    """Points, grade and progress counted only inside the given axes.
+
+    A manager follows one trail: showing the global totals would expose results
+    from trails they do not administer. Nothing is written — the stored global
+    values stay as they are for everyone else.
+    """
+    progress = db.query(models.UserNodeProgress, models.TrainingNode).join(
+        models.TrainingNode, models.TrainingNode.id == models.UserNodeProgress.node_id,
+    ).filter(
+        models.UserNodeProgress.user_id == user_id,
+        models.UserNodeProgress.completed.is_(True),
+        models.TrainingNode.eixo.in_(eixos),
+    ).all()
+    submissions = db.query(models.ActivitySubmission, models.Activity).join(
+        models.Activity, models.Activity.id == models.ActivitySubmission.activity_id,
+    ).filter(
+        models.ActivitySubmission.user_id == user_id,
+        models.Activity.eixo.in_(eixos),
+    ).all()
+    # Mesma regra da trilha: material concluído vale 50; jogo, a melhor pontuação.
+    points = sum(50 if node.type == "material" else row.score for row, node in progress)
+    return {
+        "pontos_acumulados": points,
+        "nota_rotacao": weighted_average(
+            (float(sub.grade), activity_weight(activity)) for sub, activity in submissions if sub.grade is not None
+        ),
+        "nodes_completed": len(progress),
+        "nodes_total": db.query(models.TrainingNode).filter(models.TrainingNode.eixo.in_(eixos)).count(),
+        "activities_submitted": len(submissions),
+        "activities_graded": sum(sub.grade is not None for sub, _ in submissions),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Serialization
 # ---------------------------------------------------------------------------

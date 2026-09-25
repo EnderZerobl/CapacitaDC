@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
-from app.auth import get_current_user, get_current_organizador_or_admin
+from app.auth import get_current_user, get_current_staff
 from app.services import node_service, access
 from app.services.game_service import revision_for_node
 from app.services.activity_service import activity_weight, is_effectively_open, submission_to_out
@@ -78,12 +78,13 @@ def update_node_activity(
     node_id: str,
     payload: schemas.NodeActivityUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     node = db.get(models.TrainingNode, node_id)
     if node is None:
         raise HTTPException(404, "Etapa não encontrada")
     access.ensure_node_eixo_access(current_user, node.eixo)
+    access.ensure_contained_in_axis(db, current_user, node)
     if node.type == "game":
         raise HTTPException(400, "Etapas de jogo não podem ser convertidas em atividades.")
     activity = db.get(models.Activity, payload.activity_id)
@@ -105,7 +106,7 @@ def update_node_activity(
 def create_training_node(
     node_in: schemas.TrainingNodeCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     access.ensure_node_eixo_access(current_user, node_in.eixo)
     node_name = (node_in.name or "").strip()
@@ -204,12 +205,13 @@ def create_training_node(
 def delete_training_node(
     node_id: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     node = db.query(models.TrainingNode).filter(models.TrainingNode.id == node_id).first()
     if not node:
         raise HTTPException(status_code=404, detail="Nó não encontrado")
     access.ensure_node_eixo_access(current_user, node.eixo)
+    access.ensure_contained_in_axis(db, current_user, node)
     db.delete(node)
     db.commit()
     return {"detail": "Nó excluído com sucesso"}
@@ -220,13 +222,14 @@ def release_node(
     node_id: str,
     release_data: schemas.NodeReleaseUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     node = db.query(models.TrainingNode).filter(models.TrainingNode.id == node_id).first()
     if not node:
         raise HTTPException(status_code=404, detail="Nó não encontrado")
 
     access.ensure_node_eixo_access(current_user, node.eixo)
+    access.ensure_contained_in_axis(db, current_user, node)
     node.is_released = release_data.is_released
     node.released_at = release_data.released_at
     node.released_by = current_user.id if release_data.is_released else None
@@ -283,12 +286,13 @@ def update_node_order(
     node_id: str,
     order_data: schemas.NodeOrderUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     node = db.query(models.TrainingNode).filter(models.TrainingNode.id == node_id).first()
     if not node:
         raise HTTPException(status_code=404, detail="Nó não encontrado")
     access.ensure_node_eixo_access(current_user, node.eixo)
+    access.ensure_contained_in_axis(db, current_user, node)
     node.order_index = order_data.order_index
     db.commit()
     db.refresh(node)

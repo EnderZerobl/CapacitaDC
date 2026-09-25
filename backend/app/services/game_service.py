@@ -26,6 +26,8 @@ def game_for_author(db, game_id, user, *, lock=False):
     if game is None:
         raise HTTPException(404, "Jogo não encontrado")
     access.ensure_node_eixo_access(user, game.eixo)
+    if lock:
+        access.ensure_contained_in_axis(db, user, game)
     return game
 
 

@@ -14,6 +14,8 @@ npm run build
 
 As suítes cobrem autenticação, permissões, criação e contratos das rotas, conteúdo bloqueado, conclusão das etapas, avaliação dos cinco formatos de jogos, tentativas repetidas, publicações, migrações, média ponderada e fila de correção.
 
+`test_managers.py` cobre o gerente por eixo com dados descartáveis para os três eixos: nomeação pelo administrador e eixo obrigatório; cada gerente contra os outros dois eixos, por listagem e por ID; requisições manipuladas (promoção, troca de eixo ou cargo, edição de outros gerentes); conteúdo `all`/`trainee` e vínculos cruzados; vínculos antigos compartilhados; correções que exigem membro e atividade do eixo; notas, perfil e ranking contados só no eixo; nomes de eixo antigos equivalentes aos códigos e eixo desconhecido sem acesso; mudança de papel valendo para a sessão aberta; biblioteca com três etapas alcançadas de dez, agendamento, pré-requisito pendente, múltiplos vínculos e trilha não autorizada; e download de documentos por URL direta.
+
 ## Preparar testes no navegador
 
 Os scripts usam Playwright. Se ele não estiver instalado, prepare-o apenas no ambiente de testes:
@@ -39,7 +41,7 @@ cd frontend
 NEXT_DIST_DIR=.next-qa API_BACKEND_URL=http://127.0.0.1:8021 npm run dev -- --port 3017
 ```
 
-O servidor de teste cria quatro contas (`admin@example.com`, `organizador@example.com`, `membro@example.com`, `trainee@example.com`), todas com senha `qa-test-password`. Essas contas existem somente no banco descartável. Ao encerrar a API, os dados temporários são removidos.
+O servidor de teste cria as contas `admin@example.com`, `organizador@example.com`, `membro@example.com` e `trainee@example.com`, além de um gerente e um membro por eixo (`gerente-vendas@example.com`, `membro-vendas@example.com`, e o mesmo para `conexoes` e `experiencia`), todas com senha `qa-test-password`. Essas contas existem somente no banco descartável; nenhuma conta de gerente é criada em produção. Ao encerrar a API, os dados temporários são removidos.
 
 ## Interface e sessão
 
@@ -84,6 +86,16 @@ BASE_URL=http://127.0.0.1:3017 node frontend/tests/submission_attachments_journe
 ```
 
 Verifica PDF e CSV via multipart, limites de quantidade/tamanho/formato, campos de links e comentários, preservação após falha, conclusão da etapa, reenvio que invalida a nota, download autenticado e exibição na correção. A suíte `test_submission_attachments.py` cobre também propriedade dos anexos, atividade bloqueada/fechada e migração de entregas antigas.
+
+## Gerente por eixo
+
+Com uma API descartável nova (a trilha é sequencial) e o frontend conectado a ela:
+
+```bash
+BASE_URL=http://127.0.0.1:3017 PASSWORD=qa-test-password node frontend/tests/manager_journey.cjs
+```
+
+O administrador nomeia um gerente pela interface (o eixo é obrigatório); o gerente de Conexões vê o painel identificado, só os membros e materiais do eixo, cria um material com eixo travado e link clicável na pré-visualização, e tem recusadas pela API as tentativas de alterar Vendas, promover membros ou criar gerentes. Um membro vê na biblioteca só os materiais alcançados, com links clicáveis. Por fim, o administrador troca o eixo do gerente com a sessão aberta e o painel passa a refletir o novo eixo.
 
 ## Upload e proxy
 

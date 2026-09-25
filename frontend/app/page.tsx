@@ -8,6 +8,7 @@ import type { Game } from "@/features/games/types"
 import { apiClient } from "@/lib/api-client"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
+import { axisLabel, homePath, isStaff, managerAxis, memberAxisLabels } from "@/lib/roles"
 import { UsersSection } from "@/components/dashboard/users-section"
 import { MemberForm } from "@/components/dashboard/member-form"
 import { ContentList } from "@/components/dashboard/content-list"
@@ -36,8 +37,27 @@ import { NodeActivityLink } from "@/components/dashboard/node-activity-link"
 import type { TrainingNode } from "@/features/nodes/types"
 
 export default function Dashboard() {
+  const { user, isLoading } = useAuth()
+  if (isLoading) return <DashboardLoading />
+  // Trocar de conta, papel ou eixo recria o painel: nada do escopo anterior fica na tela.
+  return <DashboardContent key={`${user?.id ?? ""}:${user?.type ?? ""}:${user?.eixo ?? ""}`} />
+}
+
+function DashboardLoading() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="animate-pulse text-muted-foreground">Carregando...</div>
+    </div>
+  )
+}
+
+function DashboardContent() {
   const router = useRouter()
   const { user, logout, isLoading } = useAuth()
+  // Gerente: tudo no painel fica preso ao eixo dele (o servidor aplica a mesma regra).
+  const axis = managerAxis(user)
+  const isManager = axis !== null
+  const defaultEixo = axis ?? "trainee"
 
   // Feature hooks
   const { materials, createMaterial, updateMaterial, deleteMaterial } = useMaterials()
@@ -55,13 +75,13 @@ export default function Dashboard() {
   // Edit activity state
   const [editActivityId, setEditActivityId] = useState<string | null>(null)
   const [editActivityForm, setEditActivityForm] = useState({
-    title: "", description: "", eixo: "trainee", accepts_file: true, deadline: "", material_id: "", weight: 1,
+    title: "", description: "", eixo: defaultEixo, accepts_file: true, deadline: "", material_id: "", weight: 1,
   })
 
   // Local UI state
   const [showActivityForm, setShowActivityForm] = useState(false)
   const [newActivityForm, setNewActivityForm] = useState({
-    title: "", description: "", eixo: "trainee", accepts_file: true, deadline: "", material_id: "", weight: 1,
+    title: "", description: "", eixo: defaultEixo, accepts_file: true, deadline: "", material_id: "", weight: 1,
   })
   const [showNodeForm, setShowNodeForm] = useState(false)
   const [games, setGames] = useState<Game[]>([])
@@ -70,11 +90,11 @@ export default function Dashboard() {
   const [nodeError, setNodeError] = useState("")
   const [creatingNode, setCreatingNode] = useState(false)
   useEffect(() => {
-    if (!showNodeForm || !user || !["admin", "organizador"].includes(user.type)) return
+    if (!showNodeForm || !user || !isStaff(user.type)) return
     gamesApi.list().then(setGames).catch(error => setNodeError(error.message))
   }, [showNodeForm, user?.id])
   const [nodeForm, setNodeForm] = useState({
-    name: "", type: "activity" as "activity" | "game", eixo: "trainee",
+    name: "", type: "activity" as "activity" | "game", eixo: defaultEixo,
     activity_id: "", reference_id: "", deadline: "", is_released: false,
     questions: [] as Array<{ text: string; explanation: string; options: Array<{ text: string; is_correct: boolean; score: number; feedback: string }> }>,
   })
@@ -82,9 +102,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!isLoading) {
       if (!user) router.push("/login")
-      else if (user.type !== "admin" && user.type !== "organizador") {
-        router.push(user.type === "membro" ? "/membros" : "/trainees")
-      }
+      else if (!isStaff(user.type)) router.push(homePath(user.type))
     }
   }, [user, isLoading, router])
 
@@ -110,13 +128,14 @@ export default function Dashboard() {
   }
 
   const handleAddMember = async (data: {
-    name: string; email: string; cargo: "admin" | "organizador" | "membro" | "trainee";
+    name: string; email: string; cargo: "admin" | "organizador" | "gerente" | "membro" | "trainee";
     password?: string; eixo?: "vendas" | "conexoes" | "experiencia"
   }) => {
     let userType = "membro"
     if (data.cargo === "trainee") userType = "trainee"
     else if (data.cargo === "admin") userType = "admin"
     else if (data.cargo === "organizador") userType = "organizador"
+    else if (data.cargo === "gerente") userType = "gerente"
     await createUser({ name: data.name, email: data.email, cargo: data.cargo, type: userType, eixo: data.eixo, password: data.password })
   }
 
@@ -154,7 +173,7 @@ export default function Dashboard() {
       setShowNodeForm(false)
       setGameRevisionId("")
       setPrerequisiteId("")
-      setNodeForm({ name: "", type: "activity", eixo: "trainee", activity_id: "", reference_id: "", deadline: "", is_released: false, questions: [] })
+      setNodeForm({ name: "", type: "activity", eixo: defaultEixo, activity_id: "", reference_id: "", deadline: "", is_released: false, questions: [] })
     } catch (error) {
       setNodeError(error instanceof Error ? error.message : "Erro ao criar etapa")
     } finally {
@@ -183,7 +202,7 @@ export default function Dashboard() {
         deadline: newActivityForm.deadline ? new Date(newActivityForm.deadline).toISOString() : null,
         material_id: newActivityForm.material_id || null, weight: Number(newActivityForm.weight),
       })
-      setNewActivityForm({ title: "", description: "", eixo: "trainee", accepts_file: true, deadline: "", material_id: "", weight: 1 })
+      setNewActivityForm({ title: "", description: "", eixo: defaultEixo, accepts_file: true, deadline: "", material_id: "", weight: 1 })
       setShowActivityForm(false)
     } catch (e: any) { alert(e.message || "Erro ao criar atividade") }
   }
@@ -233,15 +252,10 @@ export default function Dashboard() {
 
   const handleLogout = () => { logout(); router.push("/login") }
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Carregando...</div>
-      </div>
-    )
-  }
+  if (isLoading || !user || !isStaff(user.type)) return <DashboardLoading />
 
   const isOrg = user?.type === "organizador"
+  const axisName = axis ? memberAxisLabels[axis] : ""
 
   function getNodeStatus(node: TrainingNode) {
     if (!node.is_released) return { label: "Bloqueado", color: "text-rose-400 border-rose-500/30", icon: Lock }
@@ -274,10 +288,10 @@ export default function Dashboard() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-foreground">
-                  {isOrg ? "Dashboard Organizador" : "Dashboard Admin"}
+                  {isManager ? `Gerente — ${axisName}` : isOrg ? "Dashboard Organizador" : "Dashboard Admin"}
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  {isOrg ? "Gestão do PlugInfo" : "Gestão Comercial"}
+                  {isManager ? "Membros, materiais e trilha do seu eixo" : isOrg ? "Gestão do PlugInfo" : "Gestão Comercial"}
                 </p>
               </div>
             </div>
@@ -288,7 +302,7 @@ export default function Dashboard() {
                   <User className="h-4 w-4" />
                   <span className="hidden sm:inline">{user.name}</span>
                   <Badge variant="outline" className="text-primary border-primary/30">
-                    {isOrg ? "PlugInfo" : "Admin"}
+                    {isManager ? `Gerente · ${axisName}` : isOrg ? "PlugInfo" : "Admin"}
                   </Badge>
                 </div>
               )}
@@ -312,7 +326,7 @@ export default function Dashboard() {
           <TabsList className="bg-card border border-border flex-wrap h-auto gap-1">
             <TabsTrigger value="usuarios" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Users className="h-4 w-4" />
-              {isOrg ? "Trainees" : "Usuários"}
+              {isManager ? "Membros" : isOrg ? "Trainees" : "Usuários"}
             </TabsTrigger>
             <TabsTrigger value="materiais" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <FileQuestion className="h-4 w-4" />
@@ -341,19 +355,22 @@ export default function Dashboard() {
             <div className="flex items-start justify-between">
               <div className="space-y-2">
                 <h2 className="text-2xl font-bold text-foreground">
-                  {isOrg ? "Trainees do PlugInfo" : "Usuários"}
+                  {isManager ? `Membros de ${axisName}` : isOrg ? "Trainees do PlugInfo" : "Usuários"}
                 </h2>
                 <p className="text-muted-foreground">
-                  {isOrg ? "Gerencie e acompanhe os trainees sob sua supervisão" : "Gerencie os membros e trainees do setor comercial"}
+                  {isManager ? "Cadastre, edite e acompanhe os membros do seu eixo"
+                    : isOrg ? "Gerencie e acompanhe os trainees sob sua supervisão" : "Gerencie os membros e trainees do setor comercial"}
                 </p>
               </div>
-              <MemberForm onSubmit={handleAddMember} userType={user?.type} />
+              <MemberForm onSubmit={handleAddMember} userType={user?.type} managerAxis={axis} />
             </div>
             <UsersSection
               members={members}
               trainees={trainees}
               showGrades={true}
               showProfiles={true}
+              showTrainees={!isManager}
+              membersTitle={isManager ? `Membros — ${axisName}` : undefined}
               currentUserRole={user?.type}
               onUpdateTrainee={handleUpdateTrainee}
               onUpdateUser={handleUpdateUser}
@@ -400,8 +417,11 @@ export default function Dashboard() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">Eixo / Público</label>
-                      <select
+                      <label htmlFor="activity-axis" className="text-xs text-muted-foreground">Eixo / Público</label>
+                      {isManager ? (
+                        <Input id="activity-axis" value={`Membros — ${axisName}`} disabled className="bg-secondary border-border text-xs h-9" />
+                      ) : <select
+                        id="activity-axis"
                         value={newActivityForm.eixo}
                         onChange={e => setNewActivityForm(p => ({ ...p, eixo: e.target.value }))}
                         className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-xs text-foreground"
@@ -415,7 +435,7 @@ export default function Dashboard() {
                             <option value="all">Todos</option>
                           </>
                         )}
-                      </select>
+                      </select>}
                     </div>
 
                     <div className="space-y-1">
@@ -663,7 +683,7 @@ export default function Dashboard() {
                 Todos os envios em uma fila, pendentes primeiro. A nota entra na média ponderada da pessoa assim que você salva.
               </p>
             </div>
-            <CorrectionsQueue activities={activities} isOrganizer={isOrg} onGraded={() => { void refreshUsers() }} />
+            <CorrectionsQueue activities={activities} isOrganizer={isOrg} managerAxis={axis} onGraded={() => { void refreshUsers() }} />
           </TabsContent>
 
           {/* Seção Notas */}
@@ -671,7 +691,9 @@ export default function Dashboard() {
             <div className="space-y-1">
               <h2 className="text-2xl font-bold text-foreground">Planilha de Notas</h2>
               <p className="text-muted-foreground text-sm">
-                Visão consolidada de desempenho. Trainees divididos por rotação.
+                {isManager
+                  ? `Desempenho dos membros de ${axisName}, contando apenas a trilha deste eixo.`
+                  : "Visão consolidada de desempenho. Trainees divididos por rotação."}
               </p>
             </div>
 
@@ -741,7 +763,7 @@ export default function Dashboard() {
               if (membrosGrades.length === 0) return null
               return (
                 <div className="space-y-3">
-                  <h3 className="text-base font-semibold text-foreground">Membros de Comercial</h3>
+                  <h3 className="text-base font-semibold text-foreground">{isManager ? `Membros — ${axisName}` : "Membros de Comercial"}</h3>
                   <div className="rounded-xl border border-border overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
@@ -759,7 +781,7 @@ export default function Dashboard() {
                         {membrosGrades.map((row: any) => (
                           <tr key={row.id} className="border-b border-border/50 hover:bg-secondary/30 transition-colors">
                             <td className="p-3 font-medium text-foreground">{row.name}</td>
-                            <td className="p-3 text-muted-foreground capitalize">{row.eixo || "—"}</td>
+                            <td className="p-3 text-muted-foreground">{axisLabel(row.eixo)}</td>
                             <td className="p-3 text-center">
                               {row.nodes_total > 0
                                 ? <span className={row.nodes_completed / row.nodes_total >= 0.8 ? "text-emerald-400 font-semibold" : "text-muted-foreground"}>
@@ -795,7 +817,8 @@ export default function Dashboard() {
             <div className="space-y-2">
               <h2 className="text-2xl font-bold text-foreground">Materiais</h2>
               <p className="text-muted-foreground">
-                {isOrg ? "Gerencie os materiais específicos dos Trainees" : "Gerencie os materiais disponíveis para membros e trainees"}
+                {isManager ? `Gerencie os materiais dos membros de ${axisName}`
+                  : isOrg ? "Gerencie os materiais específicos dos Trainees" : "Gerencie os materiais disponíveis para membros e trainees"}
               </p>
             </div>
              <ContentList
@@ -804,6 +827,7 @@ export default function Dashboard() {
               onAddContent={handleAddContent}
               onDeleteContent={handleDeleteContent}
               userType={user?.type}
+              managerAxis={axis}
             />
           </TabsContent>
 
@@ -838,8 +862,8 @@ export default function Dashboard() {
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground">Eixo</label>
-                      {isOrg ? (
-                        <Input value="Trainee" disabled className="bg-secondary border-border text-xs h-9" />
+                      {isOrg || isManager ? (
+                        <Input value={isManager ? axisName : "Trainee"} disabled className="bg-secondary border-border text-xs h-9" />
                       ) : (
                         <select value={nodeForm.eixo}
                           onChange={e => {

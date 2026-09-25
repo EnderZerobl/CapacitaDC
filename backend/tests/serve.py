@@ -37,16 +37,23 @@ def main():
         blob_storage.upload = fake_upload
         blob_storage.download = store.get
         blob_storage.delete = lambda pathname: store.pop(pathname, None)
+        # Um gerente e um membro por eixo, para as jornadas de isolamento entre eixos.
+        accounts = [(role, role, 'vendas' if role == 'membro' else None)
+                    for role in ['admin', 'organizador', 'membro', 'trainee']]
+        for axis in ['vendas', 'conexoes', 'experiencia']:
+            accounts += [(f'gerente-{axis}', 'gerente', axis), (f'membro-{axis}', 'membro', axis)]
+        password_hash = get_password_hash('qa-test-password')
         with SessionLocal() as db:
-            for role in ['admin', 'organizador', 'membro', 'trainee']:
+            for account, role, eixo in accounts:
                 db.add(models.User(
-                    id=role, name=role.capitalize(), email=f'{role}@example.com',
-                    type=role, cargo=role, password_hash=get_password_hash('qa-test-password'),
-                    pontos_acumulados=0, eixo='vendas' if role == 'membro' else None,
+                    id=account, name=account.capitalize(), email=f'{account}@example.com',
+                    type=role, cargo=role, password_hash=password_hash,
+                    pontos_acumulados=0, eixo=eixo,
                 ))
             db.commit()
         print(f'Banco descartável: {database}', flush=True)
-        print('Contas: admin/organizador/membro/trainee@example.com; senha de teste: qa-test-password', flush=True)
+        print('Contas: admin/organizador/membro/trainee@example.com, gerente-<eixo>@example.com e '
+              'membro-<eixo>@example.com (vendas, conexoes, experiencia); senha de teste: qa-test-password', flush=True)
         try:
             uvicorn.run(app, host='127.0.0.1', port=args.port)
         finally:

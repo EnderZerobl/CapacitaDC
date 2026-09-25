@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
+import { axisLabel, homePath, isStaff } from "@/lib/roles"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -66,8 +67,8 @@ export default function PerfilPage() {
     if (!isLoading) {
       if (!user) {
         router.push("/login")
-      } else if (user.type !== "admin" && user.type !== "organizador") {
-        router.push("/trainees")
+      } else if (!isStaff(user.type)) {
+        router.push(homePath(user.type))
       } else if (userId && userId !== "[id]") {
         fetchProfile()
       }
@@ -149,7 +150,7 @@ export default function PerfilPage() {
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground mt-1">{profile.email}</p>
-                <p className="text-sm text-muted-foreground">{profile.cargo}{profile.eixo ? ` · ${profile.eixo}` : ""}</p>
+                <p className="text-sm text-muted-foreground">{profile.cargo}{profile.eixo ? ` · ${axisLabel(profile.eixo)}` : ""}</p>
 
                 {/* Stats row — only for trainee / membro */}
                 {(profile.type === "trainee" || profile.type === "membro") && (

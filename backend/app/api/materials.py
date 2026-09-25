@@ -9,12 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
-from app.auth import get_current_user, get_current_organizador_or_admin
-from app.services.node_service import blocked_content_ids
+from app.auth import get_current_user, get_current_staff
+from app.services.node_service import library_material_ids
+from app.services import access
+from app.services.material_files import validate_document_links
 from app.services.access import (
     allowed_material_types,
     ensure_material_access,
-    ensure_material_type_access,
 )
 
 router = APIRouter()
@@ -30,9 +31,12 @@ def get_materials(
     allowed = allowed_material_types(current_user)
     if allowed is not None:
         query = query.filter(models.Material.type.in_(allowed))
-    blocked_materials, _ = blocked_content_ids(db, current_user)
-    if blocked_materials:
-        query = query.filter(models.Material.id.notin_(blocked_materials))
+    if current_user.type == "gerente":
+        query = query.filter(models.Material.eixo.in_(access.manageable_eixos(current_user)))
+    # Participantes só veem o que a trilha já alcançou; a autoria segue o escopo do cargo.
+    reachable = library_material_ids(db, current_user)
+    if reachable is not None:
+        query = query.filter(models.Material.id.in_(reachable))
     return query.all()
 
 
@@ -41,9 +45,10 @@ def get_materials(
 def create_material(
     material_in: schemas.MaterialCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
-    ensure_material_type_access(current_user, material_in.type, manage=True)
+    ensure_material_access(current_user, material_in, manage=True)
+    validate_document_links(db, current_user, material_in.documents)
 
     new_material = models.Material(
         id=str(uuid.uuid4()),
@@ -80,14 +85,18 @@ def update_material(
     material_id: str,
     material_in: schemas.MaterialCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     material = db.query(models.Material).filter(models.Material.id == material_id).first()
     if not material:
         raise HTTPException(status_code=404, detail="Material não encontrado")
 
     ensure_material_access(current_user, material, manage=True)
-    ensure_material_type_access(current_user, material_in.type, manage=True)
+    # O material atual e o destino passam pela mesma regra: não dá para puxar um
+    # material de outro eixo nem movê-lo para fora do próprio.
+    ensure_material_access(current_user, material_in, manage=True)
+    access.ensure_contained_in_axis(db, current_user, material)
+    validate_document_links(db, current_user, material_in.documents, material)
 
     material.name = material_in.name
     material.type = material_in.type
@@ -121,13 +130,14 @@ def update_material(
 def delete_material(
     material_id: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     material = db.query(models.Material).filter(models.Material.id == material_id).first()
     if not material:
         raise HTTPException(status_code=404, detail="Material não encontrado")
 
     ensure_material_access(current_user, material, manage=True)
+    access.ensure_contained_in_axis(db, current_user, material)
 
     db.delete(material)
     db.commit()

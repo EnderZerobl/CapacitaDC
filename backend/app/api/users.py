@@ -12,11 +12,31 @@ from app import models, schemas
 from app.auth import (
     get_password_hash,
     get_current_member_or_above,
+    get_current_staff,
     get_current_organizador_or_admin,
 )
 from app.services.access import allowed_activity_eixos, allowed_node_eixos
+from app.services import access
+from app.services.activity_service import axis_metrics
 
 router = APIRouter()
+
+# O cargo é só o texto exibido; a permissão vem de `type`.
+CARGO_LABELS = {
+    "membro": "Membro",
+    "organizador": "Organizador do PlugInfo",
+    "trainee": "Trainee",
+    "gerente": "Gerente",
+}
+
+
+def _scoped_to_manager(db: Session, current_user: models.User, user: models.User) -> schemas.UserOut:
+    """Totals a manager sees: only what the person did in the manager's trail."""
+    metrics = axis_metrics(db, user.id, access.manageable_eixos(current_user))
+    return schemas.UserOut.model_validate(user).model_copy(update={
+        "nota_rotacao": metrics["nota_rotacao"],
+        "pontos_acumulados": metrics["pontos_acumulados"],
+    })
 
 
 @router.get("", response_model=List[schemas.UserOut])
@@ -25,6 +45,8 @@ def get_users(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_member_or_above),
 ):
+    if current_user.type == "gerente":
+        return [_scoped_to_manager(db, current_user, user) for user in access.managed_users(db, current_user)]
     if current_user.type == "organizador":
         return db.query(models.User).filter(models.User.type == "trainee").all()
     return db.query(models.User).all()
@@ -35,33 +57,21 @@ def get_users(
 def create_member(
     user_in: schemas.UserCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     if current_user.type == "organizador" and user_in.type != "trainee":
         raise HTTPException(
             status_code=403,
             detail="Acesso não autorizado. Organizadores do PlugInfo só podem cadastrar trainees.",
         )
+    eixo = access.validate_user_assignment(current_user, role=user_in.type, eixo=user_in.eixo)
+    if current_user.type == "gerente" and user_in.cargo.strip().lower() != "membro":
+        raise HTTPException(status_code=403, detail="Gerentes cadastram apenas membros.")
 
     if db.query(models.User).filter(models.User.email == user_in.email).first():
         raise HTTPException(status_code=400, detail="Este email já está cadastrado")
 
-    cargo_label = user_in.cargo
-    if user_in.cargo == "membro":
-        cargo_label = "Membro"
-    elif user_in.cargo == "organizador":
-        cargo_label = "Organizador do PlugInfo"
-    elif user_in.cargo == "trainee":
-        cargo_label = "Trainee"
-
-    eixo_label = None
-    if user_in.eixo:
-        eixo_labels = {
-            "vendas": "Vendas",
-            "conexoes": "Conexões",
-            "experiencia": "Experiência do Consumidor",
-        }
-        eixo_label = eixo_labels.get(user_in.eixo.lower(), user_in.eixo)
+    cargo_label = "Gerente" if user_in.type == "gerente" else CARGO_LABELS.get(user_in.cargo, user_in.cargo)
 
     new_user = models.User(
         id=str(uuid.uuid4()),
@@ -70,7 +80,7 @@ def create_member(
         password_hash=get_password_hash(user_in.password or "123456"),
         cargo=cargo_label,
         type=user_in.type,
-        eixo=eixo_label,
+        eixo=eixo,
         photo=user_in.photo or "",
         nota_rotacao=None,
         pontos_acumulados=0,
@@ -85,7 +95,7 @@ def create_member(
 def delete_user(
     user_id: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
@@ -97,6 +107,7 @@ def delete_user(
             status_code=403,
             detail="Acesso não autorizado. Organizadores do PlugInfo só podem excluir trainees.",
         )
+    access.ensure_user_access(current_user, user)
 
     db.query(models.UserNodeProgress).filter(
         models.UserNodeProgress.user_id == user_id
@@ -137,7 +148,7 @@ def update_user(
     user_id: str,
     user_update: schemas.UserUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
@@ -157,6 +168,18 @@ def update_user(
             detail="Acesso não autorizado. Organizadores só podem manter o perfil como trainee.",
         )
 
+    access.ensure_user_access(current_user, user)
+    # O estado final é validado antes de gravar: uma recusa não deixa meia alteração.
+    role = user_update.type or user.type
+    eixo = access.validate_user_assignment(
+        current_user, role=role,
+        eixo=user_update.eixo if "eixo" in user_update.model_fields_set else user.eixo,
+        current=user,
+    )
+    if (current_user.type == "gerente" and user_update.cargo is not None
+            and user_update.cargo.strip().lower() != (user.cargo or "").strip().lower()):
+        raise HTTPException(status_code=403, detail="Gerentes não podem alterar o cargo do membro.")
+
     if user_update.name is not None:
         user.name = user_update.name
     if user_update.email is not None:
@@ -168,12 +191,12 @@ def update_user(
                 status_code=400, detail="Este email já está sendo utilizado por outro usuário"
             )
         user.email = user_update.email
-    if user_update.cargo is not None:
-        user.cargo = user_update.cargo
-    if user_update.type is not None:
-        user.type = user_update.type
-    if user_update.eixo is not None:
-        user.eixo = user_update.eixo
+    if user_update.cargo is not None and current_user.type != "gerente":
+        user.cargo = CARGO_LABELS.get(user_update.cargo, user_update.cargo)
+    user.type = role
+    user.eixo = eixo
+    if role == "gerente":
+        user.cargo = "Gerente"
     if user_update.password is not None and user_update.password.strip() != "":
         user.password_hash = get_password_hash(user_update.password)
 
@@ -186,7 +209,7 @@ def update_user(
 def get_user_profile(
     user_id: str,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     target = db.query(models.User).filter(models.User.id == user_id).first()
     if not target:
@@ -197,6 +220,9 @@ def get_user_profile(
             detail="Organizadores só podem consultar os perfis dos trainees.",
         )
 
+    access.ensure_user_access(current_user, target)
+    # Para o gerente, pontos e média ficam restritos ao eixo dele, como as listas abaixo.
+    metrics = axis_metrics(db, target.id, access.manageable_eixos(current_user)) if current_user.type == "gerente" else {}
     visible_node_eixos = allowed_node_eixos(current_user)
     progress_list = db.query(models.UserNodeProgress).filter(
         models.UserNodeProgress.user_id == user_id
@@ -250,8 +276,8 @@ def get_user_profile(
         type=target.type,
         eixo=target.eixo,
         rotacao=target.rotacao,
-        nota_rotacao=target.nota_rotacao,
-        pontos_acumulados=target.pontos_acumulados,
+        nota_rotacao=metrics.get("nota_rotacao", target.nota_rotacao),
+        pontos_acumulados=metrics.get("pontos_acumulados", target.pontos_acumulados),
         node_progress=node_progress,
         activity_submissions=activity_submissions,
     )

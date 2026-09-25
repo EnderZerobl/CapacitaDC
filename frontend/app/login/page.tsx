@@ -6,6 +6,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
+import { homePath } from "@/lib/roles"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -30,13 +31,7 @@ export default function LoginPage() {
     const result = await login(email, password)
 
     if (result.success && result.user) {
-      if (result.user.type === "admin" || result.user.type === "organizador") {
-        router.push("/")
-      } else if (result.user.type === "membro") {
-        router.push("/membros")
-      } else {
-        router.push("/trainees")
-      }
+      router.push(homePath(result.user.type))
     } else {
       setError(result.error || "Erro ao fazer login")
     }
