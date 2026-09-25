@@ -6,7 +6,7 @@
 | --- | --- |
 | Administrador | Cadastra e gerencia pessoas, materiais, atividades, jogos e trilhas; consulta e corrige entregas de membros e trainees. |
 | Organizador do PlugInfo | Cadastra e gerencia trainees e seu conteúdo; acompanha entregas e corrige atividades desse público. Não entrega atividades nem acumula progresso de participante. |
-| Gerente | Vinculado a um único eixo comercial. Gerencia os membros, materiais, atividades, jogos e a trilha desse eixo e corrige as entregas dos seus membros. Não entrega atividades nem acumula progresso de participante. |
+| Gerente | Vinculado a um único eixo comercial. Gerencia os membros, materiais, atividades, jogos e a trilha desse eixo e corrige as entregas dos seus membros. Também faz tudo o que o organizador do PlugInfo faz: trainees e conteúdo do eixo `trainee`. Não entrega atividades nem acumula progresso de participante. |
 | Membro | Consome conteúdo comercial, joga, entrega atividades e acompanha seus resultados. |
 | Trainee | Consome conteúdo para trainees, joga, entrega atividades e acompanha seus resultados. |
 
@@ -18,26 +18,26 @@ A API verifica permissões também nas operações por ID. Ocultar botões na in
 
 Somente o administrador nomeia gerentes, troca seu eixo ou os remove do cargo; o eixo é obrigatório e deve ser `vendas`, `conexoes` ou `experiencia`. Pode haver mais de um gerente no mesmo eixo. Papel e eixo são lidos do banco a cada requisição, então uma mudança feita pelo administrador vale também para sessões já abertas. Um gerente com eixo ausente ou desconhecido não tem acesso de gestão.
 
-| Operação | Próprio eixo | Outros eixos, `all` e `trainee` |
-| --- | --- | --- |
-| Listar, consultar, cadastrar, editar (inclusive senha) e excluir membros | Sim, somente `type="membro"` | Não |
-| Promover, mudar perfil, cargo ou eixo de alguém | Não | Não |
-| Nomear ou editar gerentes, administradores, organizadores e trainees | Não | Não |
-| Materiais de membros, documentos e vídeos | Sim | Não |
-| Etapas, ordem, liberação e agendamento da trilha | Sim | Não |
-| Atividades e jogos | Sim | Não |
-| Consultar e corrigir entregas, baixar anexos | Sim, de membros do próprio eixo em atividades do próprio eixo | Não |
-| Notas, progresso, perfil e ranking | Apenas membros e trilha do próprio eixo (pontos e média contados só nesse eixo) | Não |
+| Operação | Próprio eixo | PlugInfo (`trainee`) | Outros eixos e `all` |
+| --- | --- | --- | --- |
+| Listar, consultar, cadastrar, editar (inclusive senha) e excluir pessoas | Sim, membros do eixo | Sim, trainees (inclusive rotação) | Não |
+| Promover, mudar perfil, cargo ou eixo de alguém | Não | Não (trainee continua trainee) | Não |
+| Nomear ou editar gerentes, administradores e organizadores | Não | Não | Não |
+| Materiais, documentos e vídeos | Sim, tipo membro | Sim, tipo trainee | Não |
+| Etapas, ordem, liberação e agendamento da trilha | Sim | Sim | Não |
+| Atividades e jogos | Sim | Sim | Não; conteúdo `all` fica visível, como para o organizador, mas não é editável |
+| Consultar e corrigir entregas, baixar anexos | Sim, de membros do eixo em atividades do eixo | Sim, de trainees | Não |
+| Notas, progresso, perfil e ranking | Membros contados só na trilha do eixo | Trainees como o organizador os vê | Não |
 
-Os vínculos também são conferidos: não é possível ligar material, atividade, jogo ou pré-requisito de outro eixo, nem mover um recurso para fora do eixo. Como membros enxergam as trilhas dos três eixos, uma atividade pode ter entregas de membros de outro eixo; nesse caso excluí-la ou mudar seu peso (o que alteraria notas de outras pessoas) fica com o administrador. O mesmo vale para conteúdos antigos compartilhados com a trilha de outro eixo.
+Os vínculos também são conferidos: não é possível ligar material, atividade, jogo ou pré-requisito de outro eixo, nem mover um recurso para fora do escopo do gerente (o eixo dele e o PlugInfo). Um gerente sem eixo válido perde também o acesso ao PlugInfo. Como membros enxergam as trilhas dos três eixos, uma atividade pode ter entregas de membros de outro eixo; nesse caso excluí-la ou mudar seu peso (o que alteraria notas de outras pessoas) fica com o administrador. O mesmo vale para conteúdos antigos compartilhados com a trilha de outro eixo.
 
 Usuários antigos podem ter o eixo gravado pelo nome de exibição ("Vendas", "Conexões", "Experiência do Consumidor"). Esses nomes exatos produzem a mesma autorização que os códigos; valores desconhecidos negam o acesso em vez de serem adivinhados. Novas gravações usam o código, e a interface exibe o nome completo.
 
 ## Caminhos principais
 
 - `/login` e `/cadastro`: autenticação e cadastro público de trainee.
-- `/`: painel de administração, com pessoas, materiais, atividades, **Correções**, notas e trilhas. Para o gerente, o painel se identifica como **Gerente — <eixo>** e mostra apenas o seu escopo.
-- `/jogos`: biblioteca e autoria de jogos, acessível a administradores, organizadores e gerentes (estes, no próprio eixo).
+- `/`: painel de administração, com pessoas, materiais, atividades, **Correções**, notas e trilhas. Para o gerente, o painel se identifica como **Gerente — <eixo>** e mostra apenas o seu escopo: o eixo e o PlugInfo.
+- `/jogos`: biblioteca e autoria de jogos, acessível a administradores, organizadores e gerentes (estes, no próprio eixo e no PlugInfo).
 - `/membros` e `/trainees`: consumo de conteúdo, trilhas e entregas.
 - `/perfil/[id]`: consulta administrativa do progresso, entregas e média calculada. A média não é editada nesse perfil.
 - `/recuperar-senha`: informa que a recuperação automática está indisponível e orienta procurar a administração; não simula envio de email.
@@ -63,7 +63,7 @@ Atividades podem ser associadas a etapas da trilha. Uma entrega válida conclui 
 4. Digite a **nota de 0 a 10**, acrescente feedback e salve. Uma nota zero é válida.
 5. A média da pessoa é recalculada e a planilha de notas atualiza. No filtro de pendentes, a entrega corrigida sai da fila.
 
-A mesma correção também pode ser feita na lista de envios dentro de uma atividade. O administrador acompanha membros e trainees; o organizador só recebe na fila os envios de trainees em atividades que pode gerenciar; o gerente, os envios de membros do próprio eixo em atividades desse eixo — estar numa atividade do eixo não basta.
+A mesma correção também pode ser feita na lista de envios dentro de uma atividade. O administrador acompanha membros e trainees; o organizador só recebe na fila os envios de trainees em atividades que pode gerenciar; o gerente, os envios de membros do próprio eixo em atividades desse eixo — estar numa atividade do eixo não basta — e os de trainees, como o organizador.
 
 Ao reenviar conteúdo diferente, a correção anterior é retirada, a entrega volta a pendente e a média é recalculada. Repetir a mesma entrega não duplica seu registro nem remove uma correção sem mudança no conteúdo.
 

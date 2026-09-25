@@ -31,11 +31,19 @@ _MANAGEABLE_EIXOS_BY_ROLE = {
 }
 
 
+def _with_manager_axis(user: models.User, by_role: dict) -> set[str]:
+    """O gerente acumula o escopo do organizador (PlugInfo) com o do próprio eixo.
+
+    Sem eixo válido ele não recebe nada, nem a parte do PlugInfo: um cadastro
+    quebrado nunca amplia o acesso.
+    """
+    axis = manager_axis(user)
+    return {axis} | by_role["organizador"] if axis else set()
+
+
 def allowed_node_eixos(user: models.User) -> set[str] | None:
     if user.type == "gerente":
-        # O gerente enxerga apenas o próprio eixo; sem eixo válido, nada.
-        axis = manager_axis(user)
-        return {axis} if axis else set()
+        return _with_manager_axis(user, _EIXOS_BY_ROLE)
     return None if user.type == "admin" else _EIXOS_BY_ROLE.get(user.type, set())
 
 
@@ -46,13 +54,14 @@ def allowed_activity_eixos(user: models.User) -> set[str] | None:
 def manageable_eixos(user: models.User) -> set[str] | None:
     """Axes the user may create or correct content in. None means every axis."""
     if user.type == "gerente":
-        return allowed_node_eixos(user)
+        return _with_manager_axis(user, _MANAGEABLE_EIXOS_BY_ROLE)
     return None if user.type == "admin" else _MANAGEABLE_EIXOS_BY_ROLE.get(user.type, set())
 
 
 def allowed_material_types(user: models.User) -> set[str] | None:
     if user.type == "gerente":
-        return {"membro"} if manager_axis(user) else set()
+        # Materiais de membros do eixo e, como o organizador, os de trainees.
+        return {"membro"} | _MATERIAL_TYPES_BY_ROLE["organizador"] if manager_axis(user) else set()
     return None if user.type == "admin" else _MATERIAL_TYPES_BY_ROLE.get(user.type, set())
 
 
@@ -95,11 +104,15 @@ def ensure_material_access(user: models.User, material, *, manage: bool = False)
     """Check a stored material or an incoming payload: both carry type and axis.
 
     The type alone does not isolate managers, since every member material has
-    type "membro"; for them the axis must match as well.
+    type "membro"; for them the axis must match as well: member materials stay in
+    their own axis and trainee (PlugInfo) materials in the "trainee" axis.
     """
     ensure_material_type_access(user, material.type, manage=manage)
     if user.type == "gerente":
         ensure_node_eixo_access(user, material.eixo)
+        expected = manager_axis(user) if material.type == "membro" else "trainee"
+        if material.eixo != expected:
+            raise HTTPException(status_code=403, detail="Você não pode gerenciar conteúdo deste eixo.")
 
 
 def effective_prerequisite_id(db: Session, node: models.TrainingNode) -> str | None:
@@ -152,7 +165,7 @@ def ensure_node_access(
 # ---------------------------------------------------------------------------
 
 def can_manage_user(actor: models.User, target: models.User | None) -> bool:
-    """Admin manages everyone; organizers, trainees; managers, members of their axis."""
+    """Admin manages everyone; organizers, trainees; managers, trainees and members of their axis."""
     if target is None:
         return False
     if actor.type == "admin":
@@ -160,7 +173,9 @@ def can_manage_user(actor: models.User, target: models.User | None) -> bool:
     if actor.type == "organizador":
         return target.type == "trainee"
     axis = manager_axis(actor)
-    return axis is not None and target.type == "membro" and normalize_axis(target.eixo) == axis
+    if axis is None:
+        return False
+    return target.type == "trainee" or (target.type == "membro" and normalize_axis(target.eixo) == axis)
 
 
 def ensure_user_access(actor: models.User, target: models.User | None) -> None:
@@ -175,7 +190,7 @@ def managed_users(db: Session, actor: models.User) -> list[models.User]:
     elif actor.type == "gerente":
         # O eixo é comparado em Python: registros antigos guardam o nome de exibição
         # e o lower() do SQLite ignora letras acentuadas.
-        query = query.filter(models.User.type == "membro")
+        query = query.filter(models.User.type.in_(["membro", "trainee"]))
     elif actor.type != "admin":
         return []
     return [user for user in query.all() if can_manage_user(actor, user)]
@@ -188,19 +203,36 @@ def managed_user_ids(db: Session, actor: models.User) -> set[str] | None:
     return {user.id for user in managed_users(db, actor)}
 
 
+def followed_eixos(actor: models.User, target: models.User) -> set[str] | None:
+    """Trails whose progress the actor sees for this person. None means all.
+
+    A manager follows members only in their own axis; trainees are followed as
+    the organizer follows them, so both see the same PlugInfo numbers.
+    """
+    if actor.type == "gerente":
+        if target.type == "membro":
+            axis = manager_axis(actor)
+            return {axis} if axis else set()
+        return _EIXOS_BY_ROLE["organizador"]
+    return allowed_node_eixos(actor)
+
+
 def validate_user_assignment(actor: models.User, *, role: str, eixo, current: models.User | None = None) -> str | None:
     """Validate the final role/axis of a user and return the axis to store.
 
     Runs before any write, so a refused request leaves the row untouched. Managers
-    can only keep people as members of their own axis; naming managers is an
-    administrator decision, as is moving someone between axes.
+    keep members in their own axis and trainees as trainees, like organizers do;
+    promoting someone, naming managers or moving people between axes is an
+    administrator decision.
     """
     code = normalize_axis(eixo)
     if actor.type == "gerente":
-        if role != "membro" or code != manager_axis(actor):
+        keeps_role = current is None or role == current.type
+        own_member = role == "membro" and code == manager_axis(actor)
+        if not keeps_role or not (own_member or role == "trainee"):
             raise HTTPException(
                 status_code=403,
-                detail="Gerentes só podem manter membros no próprio eixo. Promoções e transferências ficam com o administrador.",
+                detail="Gerentes mantêm membros no próprio eixo e trainees como trainees. Promoções e transferências ficam com o administrador.",
             )
     if role == "gerente" and code is None:
         raise HTTPException(status_code=422, detail="Escolha o eixo do gerente: Vendas, Conexões ou Experiência do Consumidor.")
@@ -228,15 +260,16 @@ def ensure_contained_in_axis(db: Session, actor: models.User, resource) -> None:
     Content created through the API cannot be linked across axes, but older rows
     can share a material, activity or game with another trail. Changing them would
     alter a trail the manager does not administer, so that stays with the admin.
+    The manager's trails are their own axis and the trainee (PlugInfo) trail.
     """
     if actor.type != "gerente":
         return
     ensure_node_eixo_access(actor, resource.eixo)
-    axis = manager_axis(actor)
+    managed = manageable_eixos(actor)
     nodes = db.query(models.TrainingNode)
     if isinstance(resource, models.Material):
         for activity in db.query(models.Activity).filter(models.Activity.material_id == resource.id).all():
-            if activity.eixo != axis:
+            if activity.eixo not in managed:
                 raise HTTPException(status_code=403, detail=_SHARED_LINK)
             ensure_contained_in_axis(db, actor, activity)
         nodes = nodes.filter(models.TrainingNode.reference_id == resource.id)
@@ -249,7 +282,7 @@ def ensure_contained_in_axis(db: Session, actor: models.User, resource) -> None:
         nodes = nodes.filter(models.TrainingNode.prerequisite_node_id == resource.id)
     else:
         raise TypeError(f"Unsupported resource: {type(resource).__name__}")
-    if any(node.eixo != axis for node in nodes.all()):
+    if any(node.eixo not in managed for node in nodes.all()):
         raise HTTPException(status_code=403, detail=_SHARED_LINK)
 
 

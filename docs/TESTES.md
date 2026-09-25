@@ -14,7 +14,7 @@ npm run build
 
 As suítes cobrem autenticação, permissões, criação e contratos das rotas, conteúdo bloqueado, conclusão das etapas, avaliação dos cinco formatos de jogos, tentativas repetidas, publicações, migrações, média ponderada e fila de correção.
 
-`test_managers.py` cobre o gerente por eixo com dados descartáveis para os três eixos: nomeação pelo administrador e eixo obrigatório; cada gerente contra os outros dois eixos, por listagem e por ID; requisições manipuladas (promoção, troca de eixo ou cargo, edição de outros gerentes); conteúdo `all`/`trainee` e vínculos cruzados; vínculos antigos compartilhados; correções que exigem membro e atividade do eixo; notas, perfil e ranking contados só no eixo; nomes de eixo antigos equivalentes aos códigos e eixo desconhecido sem acesso; mudança de papel valendo para a sessão aberta; biblioteca com três etapas alcançadas de dez, agendamento, pré-requisito pendente, múltiplos vínculos e trilha não autorizada; e download de documentos por URL direta.
+`test_managers.py` cobre o gerente por eixo com dados descartáveis para os três eixos: nomeação pelo administrador e eixo obrigatório; gestão do PlugInfo (trainees, rotação, conteúdo e correções do eixo `trainee`) sem promoção de trainees; cada gerente contra os outros dois eixos, por listagem e por ID; requisições manipuladas (promoção, troca de eixo ou cargo, edição de outros gerentes); conteúdo `all`/`trainee` e vínculos cruzados; vínculos antigos compartilhados; correções que exigem membro e atividade do eixo; notas, perfil e ranking contados só no eixo; nomes de eixo antigos equivalentes aos códigos e eixo desconhecido sem acesso; mudança de papel valendo para a sessão aberta; biblioteca com três etapas alcançadas de dez, agendamento, pré-requisito pendente, múltiplos vínculos e trilha não autorizada; e download de documentos por URL direta.
 
 ## Preparar testes no navegador
 
@@ -95,7 +95,7 @@ Com uma API descartável nova (a trilha é sequencial) e o frontend conectado a 
 BASE_URL=http://127.0.0.1:3017 PASSWORD=qa-test-password node frontend/tests/manager_journey.cjs
 ```
 
-O administrador nomeia um gerente pela interface (o eixo é obrigatório); o gerente de Conexões vê o painel identificado, só os membros e materiais do eixo, cria um material com eixo travado e link clicável na pré-visualização, e tem recusadas pela API as tentativas de alterar Vendas, promover membros ou criar gerentes. Um membro vê na biblioteca só os materiais alcançados, com links clicáveis. Por fim, o administrador troca o eixo do gerente com a sessão aberta e o painel passa a refletir o novo eixo.
+O administrador nomeia um gerente pela interface (o eixo é obrigatório); o gerente de Conexões vê o painel identificado, os membros e materiais do eixo e os trainees, cria um material com eixo travado e link clicável na pré-visualização e um material do PlugInfo, e tem recusadas pela API as tentativas de alterar Vendas, promover membros ou criar gerentes. Um membro vê na biblioteca só os materiais alcançados, com links clicáveis. Por fim, o administrador troca o eixo do gerente com a sessão aberta e o painel passa a refletir o novo eixo.
 
 ## Upload e proxy
 

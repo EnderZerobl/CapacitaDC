@@ -12,7 +12,7 @@ const selectClass = "h-9 rounded-md border border-border bg-secondary px-3 text-
 interface CorrectionsQueueProps {
   activities: Activity[]
   isOrganizer: boolean
-  /** O gerente corrige só membros do próprio eixo; os filtros refletem isso. */
+  /** O gerente corrige membros do próprio eixo e trainees; os filtros refletem isso. */
   managerAxis?: MemberAxis | null
   /** A média ponderada muda no servidor a cada nota, então a planilha recarrega. */
   onGraded?: () => void
@@ -20,7 +20,9 @@ interface CorrectionsQueueProps {
 
 export function CorrectionsQueue({ activities, isOrganizer, managerAxis = null, onGraded }: CorrectionsQueueProps) {
   const { items, filters, setFilters, setPage, pageSize, hasMore, loading, error, refresh, grade, remove } = useSubmissionQueue()
-  const axes = managerAxis ? [{ value: managerAxis, label: memberAxisLabels[managerAxis] }] : isOrganizer
+  const axes = managerAxis
+    ? [{ value: "trainee", label: "Trainee" }, { value: managerAxis, label: memberAxisLabels[managerAxis] }]
+    : isOrganizer
     ? [{ value: "trainee", label: "Trainee" }]
     : [{ value: "trainee", label: "Trainee" }, { value: "vendas", label: "Vendas" },
        { value: "conexoes", label: "Conexões" }, { value: "experiencia", label: "Experiência" },
@@ -34,7 +36,7 @@ export function CorrectionsQueue({ activities, isOrganizer, managerAxis = null, 
         <option value="graded">Corrigidas</option>
         <option value="all">Todas</option>
       </select>
-      {!isOrganizer && !managerAxis && (
+      {!isOrganizer && (
         <select aria-label="Tipo de pessoa" className={selectClass} value={filters.user_type ?? "all"}
           onChange={event => setFilters({ ...filters, user_type: event.target.value as typeof filters.user_type })}>
           <option value="all">Trainees e membros</option>

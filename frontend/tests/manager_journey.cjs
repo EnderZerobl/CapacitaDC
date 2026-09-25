@@ -1,5 +1,5 @@
 // Browser journey over the real API: the admin names a manager, a manager runs
-// their own axis and is refused elsewhere, a member reads only reached materials
+// their own axis and PlugInfo (trainees) and is refused elsewhere, a member reads only reached materials
 // with clickable links, and a role change reaches an open session. Needs the
 // disposable server from docs/TESTES.md (it seeds gerente-<eixo> and membro-<eixo>),
 // started fresh: the trail is sequential, so steps left by earlier runs lock new ones.
@@ -86,8 +86,8 @@ async function managerRunsOwnAxis(browser, admin, sales, connections) {
   await page.getByRole("heading", { name: "Gerente — Conexões" }).waitFor()
   await page.getByText("Membro-conexoes", { exact: true }).waitFor()
   assert.equal(await page.getByText("Membro-vendas", { exact: true }).count(), 0)
-  assert.equal(await page.getByText("Trainees de Comercial").count(), 0)
-  console.log("PASS gerente: painel identifica o eixo e lista só os membros dele")
+  await page.getByRole("heading", { name: "Trainees de Comercial" }).waitFor()
+  console.log("PASS gerente: painel identifica o eixo e lista só os membros dele e os trainees")
 
   await page.getByRole("tab", { name: /Materiais/ }).click()
   await page.getByText(connections.name, { exact: true }).waitFor()
@@ -107,6 +107,19 @@ async function managerRunsOwnAxis(browser, admin, sales, connections) {
   const { body: saved } = await api("/api/materials", admin)
   assert.equal(saved.find(item => item.name === name)?.eixo, "conexoes")
   console.log("PASS gerente: cria material travado no eixo, com link clicável na pré-visualização")
+
+  const pluginName = `Material PlugInfo ${run}`
+  await page.getByRole("button", { name: "Adicionar Conteúdo", exact: true }).click()
+  await page.getByLabel("Tipo de Conteúdo").click()
+  await page.getByRole("option", { name: "Trainee (PlugInfo)", exact: true }).click()
+  assert.equal(await page.locator("#content-axis-locked").inputValue(), "Trainee")
+  await page.getByLabel("Nome do Conteúdo", { exact: true }).fill(pluginName)
+  await page.getByRole("button", { name: "Salvar Alterações", exact: true }).click()
+  await page.getByText(pluginName, { exact: true }).waitFor()
+  const { body: withPlugin } = await api("/api/materials", admin)
+  const plugin = withPlugin.find(item => item.name === pluginName)
+  assert.deepEqual([plugin?.type, plugin?.eixo], ["trainee", "trainee"])
+  console.log("PASS gerente: também cria material do PlugInfo (trainees)")
 
   await page.getByRole("tab", { name: /Trilha/ }).click()
   await page.getByRole("heading", { name: "Conexões", exact: true }).waitFor()

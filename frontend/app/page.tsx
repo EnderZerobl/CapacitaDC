@@ -54,7 +54,7 @@ function DashboardLoading() {
 function DashboardContent() {
   const router = useRouter()
   const { user, logout, isLoading } = useAuth()
-  // Gerente: tudo no painel fica preso ao eixo dele (o servidor aplica a mesma regra).
+  // Gerente: o painel fica preso ao eixo dele e ao PlugInfo (o servidor aplica a mesma regra).
   const axis = managerAxis(user)
   const isManager = axis !== null
   const defaultEixo = axis ?? "trainee"
@@ -291,7 +291,7 @@ function DashboardContent() {
                   {isManager ? `Gerente — ${axisName}` : isOrg ? "Dashboard Organizador" : "Dashboard Admin"}
                 </h1>
                 <p className="text-sm text-muted-foreground">
-                  {isManager ? "Membros, materiais e trilha do seu eixo" : isOrg ? "Gestão do PlugInfo" : "Gestão Comercial"}
+                  {isManager ? "Seu eixo e o PlugInfo" : isOrg ? "Gestão do PlugInfo" : "Gestão Comercial"}
                 </p>
               </div>
             </div>
@@ -326,7 +326,7 @@ function DashboardContent() {
           <TabsList className="bg-card border border-border flex-wrap h-auto gap-1">
             <TabsTrigger value="usuarios" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Users className="h-4 w-4" />
-              {isManager ? "Membros" : isOrg ? "Trainees" : "Usuários"}
+              {isOrg ? "Trainees" : "Usuários"}
             </TabsTrigger>
             <TabsTrigger value="materiais" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <FileQuestion className="h-4 w-4" />
@@ -355,10 +355,10 @@ function DashboardContent() {
             <div className="flex items-start justify-between">
               <div className="space-y-2">
                 <h2 className="text-2xl font-bold text-foreground">
-                  {isManager ? `Membros de ${axisName}` : isOrg ? "Trainees do PlugInfo" : "Usuários"}
+                  {isManager ? `Membros de ${axisName} e trainees` : isOrg ? "Trainees do PlugInfo" : "Usuários"}
                 </h2>
                 <p className="text-muted-foreground">
-                  {isManager ? "Cadastre, edite e acompanhe os membros do seu eixo"
+                  {isManager ? "Cadastre, edite e acompanhe os membros do seu eixo e os trainees do PlugInfo"
                     : isOrg ? "Gerencie e acompanhe os trainees sob sua supervisão" : "Gerencie os membros e trainees do setor comercial"}
                 </p>
               </div>
@@ -369,7 +369,6 @@ function DashboardContent() {
               trainees={trainees}
               showGrades={true}
               showProfiles={true}
-              showTrainees={!isManager}
               membersTitle={isManager ? `Membros — ${axisName}` : undefined}
               currentUserRole={user?.type}
               onUpdateTrainee={handleUpdateTrainee}
@@ -418,16 +417,15 @@ function DashboardContent() {
                     </div>
                     <div className="space-y-1">
                       <label htmlFor="activity-axis" className="text-xs text-muted-foreground">Eixo / Público</label>
-                      {isManager ? (
-                        <Input id="activity-axis" value={`Membros — ${axisName}`} disabled className="bg-secondary border-border text-xs h-9" />
-                      ) : <select
+                      <select
                         id="activity-axis"
                         value={newActivityForm.eixo}
-                        onChange={e => setNewActivityForm(p => ({ ...p, eixo: e.target.value }))}
+                        onChange={e => setNewActivityForm(p => ({ ...p, eixo: e.target.value, material_id: "" }))}
                         className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-xs text-foreground"
                       >
+                        {axis && <option value={axis}>Membros — {axisName}</option>}
                         <option value="trainee">Trainees</option>
-                        {!isOrg && (
+                        {!isOrg && !isManager && (
                           <>
                             <option value="vendas">Membros — Vendas</option>
                             <option value="conexoes">Membros — Conexões</option>
@@ -435,7 +433,7 @@ function DashboardContent() {
                             <option value="all">Todos</option>
                           </>
                         )}
-                      </select>}
+                      </select>
                     </div>
 
                     <div className="space-y-1">
@@ -692,7 +690,7 @@ function DashboardContent() {
               <h2 className="text-2xl font-bold text-foreground">Planilha de Notas</h2>
               <p className="text-muted-foreground text-sm">
                 {isManager
-                  ? `Desempenho dos membros de ${axisName}, contando apenas a trilha deste eixo.`
+                  ? `Membros de ${axisName} contam apenas a trilha deste eixo; trainees divididos por rotação.`
                   : "Visão consolidada de desempenho. Trainees divididos por rotação."}
               </p>
             </div>
@@ -817,7 +815,7 @@ function DashboardContent() {
             <div className="space-y-2">
               <h2 className="text-2xl font-bold text-foreground">Materiais</h2>
               <p className="text-muted-foreground">
-                {isManager ? `Gerencie os materiais dos membros de ${axisName}`
+                {isManager ? `Gerencie os materiais dos membros de ${axisName} e dos trainees`
                   : isOrg ? "Gerencie os materiais específicos dos Trainees" : "Gerencie os materiais disponíveis para membros e trainees"}
               </p>
             </div>
@@ -862,8 +860,8 @@ function DashboardContent() {
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground">Eixo</label>
-                      {isOrg || isManager ? (
-                        <Input value={isManager ? axisName : "Trainee"} disabled className="bg-secondary border-border text-xs h-9" />
+                      {isOrg ? (
+                        <Input value="Trainee" disabled className="bg-secondary border-border text-xs h-9" />
                       ) : (
                         <select value={nodeForm.eixo}
                           onChange={e => {
@@ -872,10 +870,15 @@ function DashboardContent() {
                             setPrerequisiteId("")
                           }}
                           className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-xs text-foreground">
-                          <option value="trainee">Trainee</option>
-                          <option value="vendas">Vendas</option>
-                          <option value="conexoes">Conexões</option>
-                          <option value="experiencia">Experiência</option>
+                          {axis ? <>
+                            <option value={axis}>{axisName}</option>
+                            <option value="trainee">Trainee</option>
+                          </> : <>
+                            <option value="trainee">Trainee</option>
+                            <option value="vendas">Vendas</option>
+                            <option value="conexoes">Conexões</option>
+                            <option value="experiencia">Experiência</option>
+                          </>}
                         </select>
                       )}
                     </div>

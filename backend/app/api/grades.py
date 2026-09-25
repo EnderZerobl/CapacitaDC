@@ -89,11 +89,11 @@ def get_leaderboard(
     current_user: models.User = Depends(get_current_user),
 ):
     if current_user.type == "gerente":
-        eixos = access.manageable_eixos(current_user)
+        # Membros pontuam só no eixo do gerente; trainees, como o organizador os vê.
         entries = [
             schemas.LeaderboardEntry.model_validate(user).model_copy(update={
-                "pontos_acumulados": axis_metrics(db, user.id, eixos)["pontos_acumulados"],
-            })
+                "pontos_acumulados": axis_metrics(db, user.id, access.followed_eixos(current_user, user))["pontos_acumulados"],
+            }) if user.type == "membro" else schemas.LeaderboardEntry.model_validate(user)
             for user in access.managed_users(db, current_user)
         ]
         return sorted(entries, key=lambda entry: entry.pontos_acumulados, reverse=True)
@@ -109,18 +109,22 @@ def get_grades(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_staff),
 ):
+    result = []
     if current_user.type == "gerente":
-        # Cada coluna conta apenas a trilha do gerente, inclusive pontos e média.
-        eixos = access.manageable_eixos(current_user)
-        rows = []
+        # Membros: cada coluna conta apenas a trilha do eixo, inclusive pontos e média.
+        # Trainees seguem abaixo com as mesmas linhas que o organizador recebe.
+        users = []
         for u in access.managed_users(db, current_user):
-            rows.append(schemas.GradeRow(
-                id=u.id, name=u.name, email=u.email, cargo=u.cargo, type=u.type,
-                eixo=u.eixo, rotacao=u.rotacao, **axis_metrics(db, u.id, eixos),
+            if u.type != "membro":
+                users.append(u)
+                continue
+            result.append(schemas.GradeRow(
+                id=u.id, name=u.name, email=u.email, cargo=u.cargo, type=u.type, eixo=u.eixo,
+                rotacao=u.rotacao, **axis_metrics(db, u.id, access.followed_eixos(current_user, u)),
             ))
-        return rows
-
-    if current_user.type == "organizador":
+        trainee_nodes = db.query(models.TrainingNode).filter(models.TrainingNode.eixo == "trainee").count()
+        total_nodes_map = {u.id: trainee_nodes for u in users}
+    elif current_user.type == "organizador":
         users = db.query(models.User).filter(models.User.type == "trainee").all()
         total_nodes_map = {
             u.id: db.query(models.TrainingNode).filter(
@@ -144,7 +148,6 @@ def get_grades(
                     models.TrainingNode.eixo == eixo
                 ).count() if eixo in MEMBER_AXES else 0
 
-    result = []
     for u in users:
         progress = db.query(models.UserNodeProgress).filter(
             models.UserNodeProgress.user_id == u.id,

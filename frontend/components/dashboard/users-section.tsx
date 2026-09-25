@@ -29,13 +29,12 @@ interface UsersSectionProps {
   trainees: Trainee[]
   showGrades?: boolean    // admin/org only
   showProfiles?: boolean  // admin/org only
-  showTrainees?: boolean  // o gerente acompanha apenas membros
   membersTitle?: string
   currentUserRole?: string
   onUpdateTrainee?: (traineeId: string, data: { rotacao?: number }) => void
   onUpdateUser?: (
     userId: string,
-    data: { name: string; email: string; cargo: string; type: string; eixo?: string; password?: string; rotacao?: number }
+    data: { name: string; email: string; cargo?: string; type: string; eixo?: string; password?: string; rotacao?: number }
   ) => void
   onDeleteUser?: (userId: string) => void
 }
@@ -113,7 +112,6 @@ export function UsersSection({
   trainees,
   showGrades = false,
   showProfiles = false,
-  showTrainees = true,
   membersTitle = "Membros & Equipe",
   currentUserRole = "admin",
   onUpdateTrainee,
@@ -171,14 +169,8 @@ export function UsersSection({
         </div>
       )}
 
-      {!showTrainees && members.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-8">
-          Nenhum membro cadastrado neste eixo ainda.
-        </p>
-      )}
-
       {/* Trainees */}
-      {showTrainees && <div className="space-y-4">
+      <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold text-foreground">
             Trainees de Comercial
@@ -225,7 +217,7 @@ export function UsersSection({
             />
           </div>
         )}
-      </div>}
+      </div>
     </div>
   )
 }

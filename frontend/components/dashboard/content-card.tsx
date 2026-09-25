@@ -33,7 +33,7 @@ interface ContentCardProps {
   onClose: () => void
   onSave: (content: ContentItem) => Promise<void>
   userType?: string
-  /** Eixo do gerente: o material fica preso a ele e ao tipo "membro". */
+  /** Eixo do gerente: material de membro fica preso a ele; o de trainee, ao PlugInfo. */
   managerAxis?: MemberAxis | null
 }
 
@@ -55,7 +55,8 @@ export function ContentCard({ content, onClose, onSave, userType = "admin", mana
         eixo: "trainee"
       }))
     } else if (managerAxis) {
-      setEditedContent(prev => ({ ...prev, type: "membro", eixo: managerAxis }))
+      // Material de trainee continua como está (o efeito abaixo acerta o eixo).
+      setEditedContent(prev => prev.type === "membro" ? { ...prev, eixo: managerAxis } : prev)
     }
   }, [userType, managerAxis])
 
@@ -192,12 +193,25 @@ export function ContentCard({ content, onClose, onSave, userType = "admin", mana
         {managerAxis ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="content-type-locked">Tipo de Conteúdo</Label>
-              <Input id="content-type-locked" value="Membro" disabled className="bg-secondary border-border" />
+              <Label htmlFor="content-type-manager">Tipo de Conteúdo</Label>
+              <Select
+                value={editedContent.type}
+                onValueChange={(value: "membro" | "trainee") =>
+                  setEditedContent({ ...editedContent, type: value, eixo: value === "trainee" ? "trainee" : managerAxis })}
+              >
+                <SelectTrigger id="content-type-manager" className="bg-secondary text-foreground border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="membro">Membro</SelectItem>
+                  <SelectItem value="trainee">Trainee (PlugInfo)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="content-axis-locked">Eixo de Comercial</Label>
-              <Input id="content-axis-locked" value={memberAxisLabels[managerAxis]} disabled className="bg-secondary border-border" />
+              <Input id="content-axis-locked" value={editedContent.type === "trainee" ? "Trainee" : memberAxisLabels[managerAxis]}
+                disabled className="bg-secondary border-border" />
             </div>
           </div>
         ) : userType !== "organizador" ? (

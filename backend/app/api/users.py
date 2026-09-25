@@ -13,9 +13,7 @@ from app.auth import (
     get_password_hash,
     get_current_member_or_above,
     get_current_staff,
-    get_current_organizador_or_admin,
 )
-from app.services.access import allowed_activity_eixos, allowed_node_eixos
 from app.services import access
 from app.services.activity_service import axis_metrics
 
@@ -31,8 +29,10 @@ CARGO_LABELS = {
 
 
 def _scoped_to_manager(db: Session, current_user: models.User, user: models.User) -> schemas.UserOut:
-    """Totals a manager sees: only what the person did in the manager's trail."""
-    metrics = axis_metrics(db, user.id, access.manageable_eixos(current_user))
+    """Totals a manager sees: members count only the manager's axis; trainees, as for organizers."""
+    if user.type != "membro":
+        return schemas.UserOut.model_validate(user)
+    metrics = axis_metrics(db, user.id, access.followed_eixos(current_user, user))
     return schemas.UserOut.model_validate(user).model_copy(update={
         "nota_rotacao": metrics["nota_rotacao"],
         "pontos_acumulados": metrics["pontos_acumulados"],
@@ -65,8 +65,8 @@ def create_member(
             detail="Acesso não autorizado. Organizadores do PlugInfo só podem cadastrar trainees.",
         )
     eixo = access.validate_user_assignment(current_user, role=user_in.type, eixo=user_in.eixo)
-    if current_user.type == "gerente" and user_in.cargo.strip().lower() != "membro":
-        raise HTTPException(status_code=403, detail="Gerentes cadastram apenas membros.")
+    if current_user.type == "gerente" and user_in.cargo.strip().lower() != user_in.type:
+        raise HTTPException(status_code=403, detail="Gerentes cadastram apenas membros do próprio eixo e trainees.")
 
     if db.query(models.User).filter(models.User.email == user_in.email).first():
         raise HTTPException(status_code=400, detail="Este email já está cadastrado")
@@ -125,7 +125,7 @@ def update_trainee(
     trainee_id: str,
     trainee_update: schemas.TraineeUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     trainee = db.query(models.User).filter(
         models.User.id == trainee_id, models.User.type == "trainee"
@@ -221,9 +221,11 @@ def get_user_profile(
         )
 
     access.ensure_user_access(current_user, target)
-    # Para o gerente, pontos e média ficam restritos ao eixo dele, como as listas abaixo.
-    metrics = axis_metrics(db, target.id, access.manageable_eixos(current_user)) if current_user.type == "gerente" else {}
-    visible_node_eixos = allowed_node_eixos(current_user)
+    # Para o gerente, os membros aparecem só com a trilha do eixo dele, inclusive
+    # pontos e média; trainees aparecem como o organizador os vê.
+    visible_node_eixos = access.followed_eixos(current_user, target)
+    scoped = current_user.type == "gerente" and target.type == "membro"
+    metrics = axis_metrics(db, target.id, visible_node_eixos) if scoped else {}
     progress_list = db.query(models.UserNodeProgress).filter(
         models.UserNodeProgress.user_id == user_id
     ).all()
@@ -247,7 +249,7 @@ def get_user_profile(
     submissions_query = db.query(models.ActivitySubmission).join(models.Activity).filter(
         models.ActivitySubmission.user_id == user_id
     )
-    visible_activity_eixos = allowed_activity_eixos(current_user)
+    visible_activity_eixos = visible_node_eixos
     if visible_activity_eixos is not None:
         submissions_query = submissions_query.filter(models.Activity.eixo.in_(visible_activity_eixos))
     subs = submissions_query.all()

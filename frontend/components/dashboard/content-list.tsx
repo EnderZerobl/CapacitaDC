@@ -96,7 +96,7 @@ export function ContentList({
                   className="pl-9 bg-secondary text-foreground border-border placeholder:text-muted-foreground"
                 />
               </div>
-              {userType !== "organizador" && !managerAxis && (
+              {userType !== "organizador" && (
                 <Select value={filterType} onValueChange={setFilterType}>
                   <SelectTrigger className="w-[140px] bg-secondary text-foreground border-border">
                     <SelectValue placeholder="Filtrar" />
