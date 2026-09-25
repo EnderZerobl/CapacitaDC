@@ -1,4 +1,4 @@
-"""Managers administer one member axis; the library only shows reached materials."""
+"""Managers administer one member axis plus PlugInfo; the library only shows reached materials."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -124,13 +124,13 @@ class ManagerTests(unittest.TestCase):
 
     # -- members -----------------------------------------------------------
 
-    def test_each_manager_manages_only_members_of_own_axis(self):
+    def test_each_manager_manages_own_members_and_trainees(self):
         for axis in AXES:
             manager, member = f'gerente_{axis}', f'membro_{axis}'
             with self.subTest(manager=manager):
                 status, listing = self.request('GET', '/api/users', role=manager)
                 self.assertEqual(status, 200)
-                self.assertEqual([row['id'] for row in listing], [member])
+                self.assertEqual({row['id'] for row in listing}, {member, 'trainee'})
                 self.assertEqual(self.request('GET', f'/api/users/{member}/profile', role=manager)[0], 200)
                 status, body = self.request('PUT', f'/api/users/{member}', {'name': 'Renomeado', 'cargo': 'Membro',
                                                                            'type': 'membro', 'eixo': axis,
@@ -138,7 +138,7 @@ class ManagerTests(unittest.TestCase):
                 self.assertEqual(status, 200, body)
                 self.assertEqual((body['name'], body['eixo']), ('Renomeado', axis))
                 outsiders = [f'membro_{other}' for other in other_axes(axis)] + [
-                    f'gerente_{other}' for other in other_axes(axis)] + ['trainee', 'admin', 'organizador', 'membro']
+                    f'gerente_{other}' for other in other_axes(axis)] + ['admin', 'organizador', 'membro']
                 for target in outsiders:
                     for method, path, payload in [('GET', f'/api/users/{target}/profile', None),
                                                   ('PUT', f'/api/users/{target}', {'name': 'Invadido'}),
@@ -150,7 +150,15 @@ class ManagerTests(unittest.TestCase):
                 self.assertEqual(status, 200, body)
                 self.assertEqual((body['type'], body['eixo'], body['cargo']), ('membro', axis, 'Membro'))
                 self.assertEqual(self.request('DELETE', f"/api/users/{body['id']}", role=manager)[0], 200)
-                for kind, eixo in [('membro', other_axes(axis)[0]), ('membro', None), ('trainee', None),
+                # Como o organizador do PlugInfo, também cadastra trainees.
+                status, body = self.request('POST', '/api/users', {
+                    'name': 'Trainee novo', 'email': f'trainee_{axis}@example.com', 'cargo': 'trainee',
+                    'type': 'trainee', 'password': 'test-only'}, role=manager)
+                self.assertEqual(status, 200, body)
+                self.assertEqual((body['type'], body['eixo'], body['cargo']), ('trainee', None, 'Trainee'))
+                self.assertEqual(self.request('GET', f"/api/users/{body['id']}/profile", role=manager)[0], 200)
+                self.assertEqual(self.request('DELETE', f"/api/users/{body['id']}", role=manager)[0], 200)
+                for kind, eixo in [('membro', other_axes(axis)[0]), ('membro', None),
                                    ('gerente', axis), ('admin', None), ('organizador', None)]:
                     status, _ = self.request('POST', '/api/users', {
                         'name': 'Fora', 'email': f'fora_{axis}@example.com', 'cargo': kind, 'type': kind, 'eixo': eixo}, role=manager)
@@ -172,16 +180,20 @@ class ManagerTests(unittest.TestCase):
             self.assertEqual(self.request('PUT', '/api/users/gerente_vendas', payload, role='gerente_vendas')[0], 403)
         status, me = self.request('GET', '/api/auth/me', role='gerente_vendas')
         self.assertEqual((status, me['type'], me['eixo']), (200, 'gerente', 'vendas'))
-        for path in ['/api/users/trainees/trainee']:
-            self.assertEqual(self.request('PUT', path, {'rotacao': 1}, role='gerente_vendas')[0], 403)
+        # Trainee continua trainee: virar membro, mesmo do próprio eixo, é promoção.
+        for payload in [{'type': 'membro', 'eixo': 'vendas'}, {'type': 'gerente', 'eixo': 'vendas'},
+                        {'type': 'organizador'}, {'cargo': 'Membro'}]:
+            self.assertEqual(self.request('PUT', '/api/users/trainee', payload, role='gerente_vendas')[0], 403, payload)
+        self.assertEqual(self.user('trainee').type, 'trainee')
 
     def test_role_and_axis_changes_apply_to_open_sessions(self):
         token = create_access_token({'sub': 'gerente_vendas', 'sub_type': 'user_id'})
+        members = lambda listing: [row['id'] for row in listing if row['type'] == 'membro']
         _, listing = self.request('GET', '/api/users', role=None, token=token)
-        self.assertEqual([row['id'] for row in listing], ['membro_vendas'])
+        self.assertEqual(members(listing), ['membro_vendas'])
         self.assertEqual(self.request('PUT', '/api/users/gerente_vendas', {'eixo': 'conexoes'})[0], 200)
         _, listing = self.request('GET', '/api/users', role=None, token=token)
-        self.assertEqual([row['id'] for row in listing], ['membro_conexoes'])
+        self.assertEqual(members(listing), ['membro_conexoes'])
         self.assertEqual(self.request('PUT', '/api/users/gerente_vendas', {'type': 'membro', 'cargo': 'membro'})[0], 200)
         self.assertEqual(self.request('GET', '/api/grades', role=None, token=token)[0], 403)
         self.assertEqual(self.request('POST', '/api/materials', {'name': 'X', 'type': 'membro', 'eixo': 'conexoes'},
@@ -202,7 +214,7 @@ class ManagerTests(unittest.TestCase):
 
     # -- content -----------------------------------------------------------
 
-    def test_each_manager_authors_only_own_axis_content(self):
+    def test_each_manager_authors_only_own_axis_and_plugin_content(self):
         seeded = {axis: self.content(axis) for axis in AXES}
         trainee_material = self.create('materials', {'name': 'Trainee', 'type': 'trainee', 'eixo': 'trainee'})
         shared_activity = self.create('activities', {'title': 'Todos', 'eixo': 'all'})
@@ -211,9 +223,10 @@ class ManagerTests(unittest.TestCase):
             with self.subTest(manager=manager):
                 material, activity, node = self.content(axis, role=manager)
                 self.create('games', {'title': 'Jogo', 'eixo': axis, 'format': 'quiz'}, role=manager)
-                own = {seeded[axis][0]['id'], material['id']}
+                own = {seeded[axis][0]['id'], material['id'], trainee_material['id']}
+                # Conteúdo `all` aparece como para o organizador, mas não é editável.
                 for resource, expected in [('materials', own),
-                                           ('activities', {seeded[axis][1]['id'], activity['id']}),
+                                           ('activities', {seeded[axis][1]['id'], activity['id'], shared_activity['id']}),
                                            ('nodes', {seeded[axis][2]['id'], node['id']})]:
                     _, listing = self.request('GET', f'/api/{resource}', role=manager)
                     self.assertEqual({row['id'] for row in listing}, expected, resource)
@@ -246,13 +259,12 @@ class ManagerTests(unittest.TestCase):
                 other = other_axes(axis)[0]
                 for method, path, payload in [
                     ('POST', '/api/materials', {'name': 'X', 'type': 'membro', 'eixo': other}),
-                    ('POST', '/api/materials', {'name': 'X', 'type': 'trainee', 'eixo': 'trainee'}),
                     ('POST', '/api/materials', {'name': 'X', 'type': 'membro', 'eixo': 'all'}),
+                    ('POST', '/api/materials', {'name': 'X', 'type': 'membro', 'eixo': 'trainee'}),
+                    ('POST', '/api/materials', {'name': 'X', 'type': 'trainee', 'eixo': axis}),
                     ('PUT', f"/api/materials/{material['id']}", {'name': 'X', 'type': 'membro', 'eixo': other}),
-                    ('PUT', f"/api/materials/{trainee_material['id']}", {'name': 'X', 'type': 'membro', 'eixo': axis}),
                     ('POST', '/api/activities', {'title': 'X', 'eixo': other}),
                     ('POST', '/api/activities', {'title': 'X', 'eixo': 'all'}),
-                    ('POST', '/api/activities', {'title': 'X', 'eixo': 'trainee'}),
                     ('POST', '/api/activities', {'title': 'X', 'eixo': axis, 'material_id': seeded[other][0]['id']}),
                     ('PATCH', f"/api/activities/{activity['id']}", {'material_id': seeded[other][0]['id']}),
                     ('PATCH', f"/api/activities/{shared_activity['id']}", {'title': 'X'}),
@@ -285,6 +297,48 @@ class ManagerTests(unittest.TestCase):
             self.assertEqual(self.request(method, path, payload, role='gerente_vendas')[0], 403, (method, path))
         status, _ = self.request('PUT', f"/api/materials/{material['id']}", {'name': 'Admin', 'type': 'membro', 'eixo': 'vendas'})
         self.assertEqual(status, 200)
+
+    def test_managers_also_run_plugin_content_and_trainees(self):
+        for axis in AXES:
+            manager = f'gerente_{axis}'
+            with self.subTest(manager=manager):
+                material = self.create('materials', {'name': 'PlugInfo', 'type': 'trainee', 'eixo': 'trainee'}, role=manager)
+                activity = self.create('activities', {'title': 'PlugInfo', 'eixo': 'trainee', 'accepts_file': False,
+                                                      'material_id': material['id']}, role=manager)
+                node = self.create('nodes', {'type': 'activity', 'eixo': 'trainee', 'activity_id': activity['id'],
+                                             'is_released': True}, role=manager)
+                self.create('games', {'title': 'Jogo PlugInfo', 'eixo': 'trainee', 'format': 'quiz'}, role=manager)
+                self.assertEqual(self.request('PUT', f"/api/materials/{material['id']}", {
+                    'name': 'PlugInfo editado', 'type': 'trainee', 'eixo': 'trainee'}, role=manager)[0], 200)
+                self.assertEqual(self.request('PATCH', f"/api/nodes/{node['id']}/release", {'is_released': True}, role=manager)[0], 200)
+                self.assertEqual(self.request('PUT', '/api/users/trainees/trainee', {'rotacao': 2}, role=manager)[0], 200)
+
+                status, body = self.request('POST', f"/api/activities/{activity['id']}/submit",
+                                            {'node_id': node['id'], 'comment': 'Entrega'}, role='trainee')
+                self.assertEqual(status, 200, body)
+                _, queue = self.request('GET', '/api/submissions', role=manager)
+                self.assertIn(body['id'], [row['id'] for row in queue])
+                path = f"/api/activities/{activity['id']}/submissions/{body['id']}"
+                self.assertEqual(self.request('PATCH', path, {'grade': 7}, role=manager)[0], 200)
+                # O organizador enxerga o que o gerente fez, e vice-versa: é o mesmo conteúdo.
+                self.assertEqual(self.request('PATCH', f"/api/activities/{activity['id']}", {'title': 'Pelo organizador'},
+                                              role='organizador')[0], 200)
+                self.assertEqual(self.request('DELETE', path, role=manager)[0], 200)
+                self.assertEqual(self.request('DELETE', f"/api/nodes/{node['id']}", role=manager)[0], 200)
+                self.assertEqual(self.request('DELETE', f"/api/activities/{activity['id']}", role=manager)[0], 200)
+        self.assertEqual(self.user('trainee').rotacao, 2)
+        # Organizadores seguem limitados ao PlugInfo: o gerente não lhes empresta o eixo.
+        self.assertEqual(self.request('POST', '/api/materials', {'name': 'X', 'type': 'membro', 'eixo': 'vendas'},
+                                      role='organizador')[0], 403)
+        self.assertEqual(self.request('GET', '/api/users/gerente_vendas/profile', role='organizador')[0], 403)
+
+    def test_manager_with_unknown_axis_does_not_keep_plugin_access(self):
+        with self.api.sessions() as db:
+            db.get(models.User, 'gerente_vendas').eixo = None
+            db.commit()
+        self.assertEqual(self.request('POST', '/api/materials', {'name': 'X', 'type': 'trainee', 'eixo': 'trainee'},
+                                      role='gerente_vendas')[0], 403)
+        self.assertEqual(self.request('PUT', '/api/users/trainees/trainee', {'rotacao': 1}, role='gerente_vendas')[0], 403)
 
     # -- corrections, grades and ranking ----------------------------------
 
@@ -332,15 +386,15 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(self.user('membro_vendas').pontos_acumulados, 50)
 
         _, rows = self.request('GET', '/api/grades', role='gerente_vendas')
-        self.assertEqual(len(rows), 1)
-        row = rows[0]
+        self.assertEqual({item['id'] for item in rows}, {'membro_vendas', 'trainee'})
+        row = next(item for item in rows if item['id'] == 'membro_vendas')
         self.assertEqual((row['id'], row['nodes_completed'], row['nodes_total'], row['pontos_acumulados'], row['nota_rotacao']),
                          ('membro_vendas', 1, 1, 0, 9.0))
         _, profile = self.request('GET', '/api/users/membro_vendas/profile', role='gerente_vendas')
         self.assertEqual([item['node_id'] for item in profile['node_progress']], [sales_node['id']])
         self.assertEqual(profile['pontos_acumulados'], 0)
         _, ranking = self.request('GET', '/api/leaderboard', role='gerente_vendas')
-        self.assertEqual([(item['id'], item['pontos_acumulados']) for item in ranking], [('membro_vendas', 0)])
+        self.assertEqual({(item['id'], item['pontos_acumulados']) for item in ranking}, {('membro_vendas', 0), ('trainee', 0)})
         # Os totais globais continuam intactos para quem vê tudo.
         _, profile = self.request('GET', '/api/users/membro_vendas/profile')
         self.assertEqual(profile['pontos_acumulados'], 50)

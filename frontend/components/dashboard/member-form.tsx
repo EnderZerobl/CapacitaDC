@@ -37,7 +37,7 @@ interface MemberFormData {
 interface MemberFormProps {
   onSubmit: (data: MemberFormData) => void | Promise<void>
   userType?: string
-  /** Eixo do gerente logado: ele só cadastra membros desse eixo. */
+  /** Eixo do gerente logado: ele cadastra membros desse eixo e trainees do PlugInfo. */
   managerAxis?: MemberAxis | null
 }
 
@@ -55,7 +55,7 @@ export function MemberForm({ onSubmit, userType = "admin", managerAxis = null }:
   const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
-  // Organizador cadastra trainees; gerente, membros do próprio eixo.
+  // Organizador cadastra trainees; gerente, membros do próprio eixo ou trainees.
   useEffect(() => {
     if (userType === "organizador") {
       setCargo("trainee")
@@ -65,6 +65,11 @@ export function MemberForm({ onSubmit, userType = "admin", managerAxis = null }:
       setEixo(managerAxis)
     }
   }, [userType, managerAxis, open])
+
+  const chooseManagerCargo = (value: "membro" | "trainee") => {
+    setCargo(value)
+    setEixo(value === "membro" && managerAxis ? managerAxis : "")
+  }
 
   const resetForm = () => {
     setName("")
@@ -152,7 +157,7 @@ export function MemberForm({ onSubmit, userType = "admin", managerAxis = null }:
         <DialogHeader>
           <DialogTitle className="text-foreground">
             {userType === "organizador" ? "Cadastrar Novo Trainee"
-              : managerAxis ? `Cadastrar Membro — ${memberAxisLabels[managerAxis]}` : "Cadastrar Novo Membro"}
+              : managerAxis ? "Cadastrar Membro ou Trainee" : "Cadastrar Novo Membro"}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             Preencha as informações para cadastrar um novo perfil no sistema.
@@ -229,12 +234,21 @@ export function MemberForm({ onSubmit, userType = "admin", managerAxis = null }:
           {managerAxis && (
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="cargo-locked" className="text-foreground">Cargo</Label>
-                <Input id="cargo-locked" value="Membro" disabled className="bg-secondary border-border" />
+                <Label htmlFor="cargo-manager" className="text-foreground">Cargo</Label>
+                <Select value={cargo} onValueChange={chooseManagerCargo}>
+                  <SelectTrigger id="cargo-manager" className="bg-secondary border-border text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="membro">Membro</SelectItem>
+                    <SelectItem value="trainee">Trainee (PlugInfo)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="eixo-locked" className="text-foreground">Eixo</Label>
-                <Input id="eixo-locked" value={memberAxisLabels[managerAxis]} disabled className="bg-secondary border-border" />
+                <Input id="eixo-locked" value={cargo === "trainee" ? "Trainee (PlugInfo)" : memberAxisLabels[managerAxis]}
+                  disabled className="bg-secondary border-border" />
               </div>
             </div>
           )}

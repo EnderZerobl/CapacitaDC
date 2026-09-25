@@ -37,7 +37,8 @@ export function GameLibrary({ isOrganizer, managerAxis = null }: { isOrganizer: 
   const [preview, setPreview] = useState<Game | null>(null)
   const [busy, setBusy] = useState(false)
   // O servidor recusa outros eixos; a lista só evita oferecer o que será recusado.
-  const axes = managerAxis ? allAxes.filter(axis => axis.value === managerAxis)
+  // Para o gerente, o próprio eixo vem primeiro (é o padrão de um jogo novo).
+  const axes = managerAxis ? [...allAxes.filter(axis => axis.value === managerAxis), allAxes[0]]
     : isOrganizer ? allAxes.filter(axis => axis.value === "trainee") : allAxes
   const load = useCallback(async () => {
     setLoading(true)

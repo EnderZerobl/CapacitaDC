@@ -46,7 +46,7 @@ interface UserEditModalProps {
   onSave: (data: {
     name: string
     email: string
-    cargo: string
+    cargo?: string
     type: string
     eixo?: string
     password?: string
@@ -76,7 +76,8 @@ export function UserEditModal({
   const [showPassword, setShowPassword] = useState(false)
 
   const isOrg = currentUserRole === "organizador"
-  // Gerente edita dados cadastrais; perfil, cargo e eixo ficam com o administrador.
+  // Gerente edita dados cadastrais (e a rotação de trainees, como o organizador);
+  // perfil, cargo e eixo ficam com o administrador.
   const isManager = currentUserRole === "gerente"
   const hasAxis = type === "membro" || type === "gerente"
 
@@ -109,11 +110,12 @@ export function UserEditModal({
     const rot = rotacao ? parseInt(rotacao) : undefined
     await onSave(isManager ? {
       // Só o que o gerente pode alterar; o servidor recusa o resto de qualquer forma.
+      // O cargo não vai: é texto livre no cadastro público e não muda aqui.
       name: name.trim(),
       email: email.trim(),
-      cargo: user.cargo,
       type: user.type,
       password: password || undefined,
+      ...(user.type === "trainee" && rot && !isNaN(rot) ? { rotacao: rot } : {}),
     } : {
       name: name.trim(),
       email: email.trim(),
@@ -203,11 +205,11 @@ export function UserEditModal({
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label htmlFor={`user-${user.id}-type`} className="text-foreground">Tipo / Cargo</Label>
-                <Input id={`user-${user.id}-type`} value={user.cargo || "Membro"} disabled className="bg-secondary border-border" />
+                <Input id={`user-${user.id}-type`} value={user.type === "trainee" ? "Trainee" : user.cargo || "Membro"} disabled className="bg-secondary border-border" />
               </div>
               <div className="space-y-1">
                 <Label htmlFor={`user-${user.id}-axis`} className="text-foreground">Eixo</Label>
-                <Input id={`user-${user.id}-axis`} value={axisLabel(user.eixo)} disabled className="bg-secondary border-border" />
+                <Input id={`user-${user.id}-axis`} value={user.type === "trainee" ? "Trainee (PlugInfo)" : axisLabel(user.eixo)} disabled className="bg-secondary border-border" />
               </div>
             </div>
           ) : !isOrg ? (
