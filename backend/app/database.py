@@ -3,7 +3,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.config import settings
 
-# For psycopg2-binary, connection url is postgresql://...
+# Both psycopg and psycopg2 are installed: the URL (or SQLAlchemy's default)
+# selects the PostgreSQL driver.
 engine = create_engine(
     settings.DATABASE_URL
 )
