@@ -6,6 +6,7 @@
  */
 
 const BASE_URL = ""
+export const ACCESS_DENIED_EVENT = "capacita:access-denied"
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -25,7 +26,8 @@ export async function responseError(response: Response): Promise<ApiError> {
           ? "O servidor está temporariamente indisponível. Tente novamente."
           : "Não foi possível concluir a solicitação."
   let message = fallback
-  if (response.status < 500 && response.status !== 401 && response.status !== 403) {
+  // Recusas (403) trazem o motivo, como o escopo do gerente; 401 e 5xx ficam genéricos.
+  if (response.status < 500 && response.status !== 401) {
     try {
       const body = await response.json()
       if (typeof body.detail === "string") message = body.detail
@@ -64,6 +66,9 @@ async function request<T>(
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers })
 
   if (!res.ok) {
+    // Uma recusa pode significar que o administrador mudou o papel ou o eixo:
+    // a sessão é conferida de novo para a tela refletir o acesso atual.
+    if (res.status === 403 && typeof window !== "undefined") window.dispatchEvent(new Event(ACCESS_DENIED_EVENT))
     throw await responseError(res)
   }
 
@@ -75,9 +80,22 @@ async function request<T>(
   return res.text() as unknown as Promise<T>
 }
 
+function isSameOrigin(url: string): boolean {
+  try {
+    return new URL(url, window.location.href).origin === window.location.origin
+  } catch {
+    return false
+  }
+}
+
 // Uploaded files live in private Blob storage, so a plain <a href> can't
 // reach them — the request needs the bearer token, hence a fetch + object URL.
+// External document links open directly: the token never leaves this site.
 export async function openAuthenticatedFile(url: string): Promise<void> {
+  if (!isSameOrigin(url)) {
+    window.open(url, "_blank", "noopener,noreferrer")
+    return
+  }
   const token = getToken()
   const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
   if (!response.ok) throw await responseError(response)

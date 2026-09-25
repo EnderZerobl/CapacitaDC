@@ -30,6 +30,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Pencil, Trash2, X, Save, Eye, EyeOff } from "lucide-react"
+import { axisLabel, normalizeAxis, type MemberAxis } from "@/lib/roles"
 
 interface UserEditModalProps {
   user: {
@@ -41,7 +42,7 @@ interface UserEditModalProps {
     eixo?: string
     rotacao?: number | null
   }
-  currentUserRole?: string // "admin" or "organizador"
+  currentUserRole?: string // "admin", "organizador" ou "gerente"
   onSave: (data: {
     name: string
     email: string
@@ -54,8 +55,8 @@ interface UserEditModalProps {
   onDelete: () => void
 }
 
-type Cargo = "admin" | "organizador" | "membro" | "trainee"
-type Eixo = "vendas" | "conexoes" | "experiencia"
+type Cargo = "admin" | "organizador" | "gerente" | "membro" | "trainee"
+type Eixo = MemberAxis
 
 export function UserEditModal({
   user,
@@ -69,12 +70,15 @@ export function UserEditModal({
   const [password, setPassword] = useState("")
   const [cargo, setCargo] = useState<Cargo>(user.cargo as Cargo)
   const [type, setType] = useState<string>(user.type)
-  const [eixo, setEixo] = useState<Eixo | "">((user.eixo as Eixo) || "")
+  const [eixo, setEixo] = useState<Eixo | "">(normalizeAxis(user.eixo) ?? "")
   const [rotacao, setRotacao] = useState<string>(user.rotacao ? user.rotacao.toString() : "")
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [showPassword, setShowPassword] = useState(false)
 
   const isOrg = currentUserRole === "organizador"
+  // Gerente edita dados cadastrais; perfil, cargo e eixo ficam com o administrador.
+  const isManager = currentUserRole === "gerente"
+  const hasAxis = type === "membro" || type === "gerente"
 
   const handleSave = async () => {
     const newErrors: Record<string, string> = {}
@@ -93,8 +97,8 @@ export function UserEditModal({
       newErrors.password = "A senha deve ter no mínimo 6 caracteres"
     }
 
-    if (type === "membro" && !eixo) {
-      newErrors.eixo = "Eixo é obrigatório para membros"
+    if (hasAxis && !eixo && !isManager) {
+      newErrors.eixo = type === "gerente" ? "Escolha o eixo que o gerente vai administrar" : "Eixo é obrigatório para membros"
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -103,13 +107,20 @@ export function UserEditModal({
     }
 
     const rot = rotacao ? parseInt(rotacao) : undefined
-    await onSave({
+    await onSave(isManager ? {
+      // Só o que o gerente pode alterar; o servidor recusa o resto de qualquer forma.
+      name: name.trim(),
+      email: email.trim(),
+      cargo: user.cargo,
+      type: user.type,
+      password: password || undefined,
+    } : {
       name: name.trim(),
       email: email.trim(),
       cargo: cargo,
       type: type,
       password: password || undefined,
-      ...(type === "membro" && eixo ? { eixo: eixo as Eixo } : { eixo: undefined }),
+      ...(hasAxis && eixo ? { eixo: eixo as Eixo } : { eixo: undefined }),
       ...(type === "trainee" && rot && !isNaN(rot) ? { rotacao: rot } : {}),
     })
     setIsOpen(false)
@@ -188,7 +199,18 @@ export function UserEditModal({
           </div>
 
           {/* Tipo e Cargo (Apenas Admin) */}
-          {!isOrg ? (
+          {isManager ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor={`user-${user.id}-type`} className="text-foreground">Tipo / Cargo</Label>
+                <Input id={`user-${user.id}-type`} value={user.cargo || "Membro"} disabled className="bg-secondary border-border" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor={`user-${user.id}-axis`} className="text-foreground">Eixo</Label>
+                <Input id={`user-${user.id}-axis`} value={axisLabel(user.eixo)} disabled className="bg-secondary border-border" />
+              </div>
+            </div>
+          ) : !isOrg ? (
             <>
               <div className="space-y-1">
                 <Label className="text-foreground">Perfil (Tipo)</Label>
@@ -205,6 +227,8 @@ export function UserEditModal({
                     } else if (val === "admin") {
                       setCargo("admin")
                       setEixo("")
+                    } else if (val === "gerente") {
+                      setCargo("gerente")
                     } else {
                       setCargo("membro")
                     }
@@ -216,15 +240,16 @@ export function UserEditModal({
                   <SelectContent>
                     <SelectItem value="admin">Administrador</SelectItem>
                     <SelectItem value="organizador">Organizador (PlugInfo)</SelectItem>
+                    <SelectItem value="gerente">Gerente de eixo</SelectItem>
                     <SelectItem value="membro">Membro</SelectItem>
                     <SelectItem value="trainee">Trainee</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
-              {type === "membro" && (
+              {hasAxis && (
                 <div className="space-y-1">
-                  <Label className="text-foreground">Eixo</Label>
+                  <Label className="text-foreground">{type === "gerente" ? "Eixo administrado" : "Eixo"}</Label>
                   <Select value={eixo} onValueChange={(val: Eixo) => setEixo(val)}>
                     <SelectTrigger className="bg-secondary border-border text-foreground">
                       <SelectValue placeholder="Selecione o eixo" />

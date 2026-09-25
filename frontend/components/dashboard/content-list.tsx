@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ContentCard, ContentItem } from "./content-card"
+import { axisLabel, type MemberAxis } from "@/lib/roles"
 import { Plus, Search, Edit2, Trash } from "lucide-react"
 
 interface ContentListProps {
@@ -19,6 +20,7 @@ interface ContentListProps {
   onAddContent: (content: ContentItem) => Promise<void>
   onDeleteContent: (id: string) => void
   userType?: string
+  managerAxis?: MemberAxis | null
 }
 
 export function ContentList({
@@ -26,7 +28,8 @@ export function ContentList({
   onUpdateContent,
   onAddContent,
   onDeleteContent,
-  userType = "admin"
+  userType = "admin",
+  managerAxis = null,
 }: ContentListProps) {
   const [editingContent, setEditingContent] = useState<ContentItem | null>(null)
   const [isAdding, setIsAdding] = useState(false)
@@ -47,7 +50,7 @@ export function ContentList({
       id: `content-new-${Date.now()}`,
       name: "Novo Conteúdo",
       type: isOrg ? "trainee" : "membro",
-      eixo: isOrg ? "trainee" : "vendas",
+      eixo: isOrg ? "trainee" : managerAxis ?? "vendas",
       text: "",
       documents: [],
       videos: [],
@@ -77,6 +80,7 @@ export function ContentList({
           onClose={handleClose}
           onSave={handleSave}
           userType={userType}
+          managerAxis={managerAxis}
         />
       ) : (
         <>
@@ -92,7 +96,7 @@ export function ContentList({
                   className="pl-9 bg-secondary text-foreground border-border placeholder:text-muted-foreground"
                 />
               </div>
-              {userType !== "organizador" && (
+              {userType !== "organizador" && !managerAxis && (
                 <Select value={filterType} onValueChange={setFilterType}>
                   <SelectTrigger className="w-[140px] bg-secondary text-foreground border-border">
                     <SelectValue placeholder="Filtrar" />
@@ -124,7 +128,7 @@ export function ContentList({
                       {content.type}
                     </span>
                     <span className="text-[10px] bg-secondary text-muted-foreground border border-border px-2 py-0.5 rounded-full uppercase font-semibold">
-                      {content.eixo}
+                      {content.eixo === "trainee" ? "Trainee" : content.eixo === "all" ? "Todos" : axisLabel(content.eixo)}
                     </span>
                   </div>
                   <h4 className="font-bold text-foreground line-clamp-1">{content.name}</h4>

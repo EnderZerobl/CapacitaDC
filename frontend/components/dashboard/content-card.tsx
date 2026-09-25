@@ -13,8 +13,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { X, FileText, Video, Plus, Trash2, Upload, Loader2, Paperclip } from "lucide-react"
+import { X, FileText, Video, Plus, Trash2, Upload, Loader2, Paperclip, ExternalLink } from "lucide-react"
 import { openAuthenticatedFile, responseError } from "@/lib/api-client"
+import { memberAxisLabels, type MemberAxis } from "@/lib/roles"
+import { LinkedText, safeHref } from "@/components/content/linked-text"
 
 export interface ContentItem {
   id: string
@@ -31,9 +33,11 @@ interface ContentCardProps {
   onClose: () => void
   onSave: (content: ContentItem) => Promise<void>
   userType?: string
+  /** Eixo do gerente: o material fica preso a ele e ao tipo "membro". */
+  managerAxis?: MemberAxis | null
 }
 
-export function ContentCard({ content, onClose, onSave, userType = "admin" }: ContentCardProps) {
+export function ContentCard({ content, onClose, onSave, userType = "admin", managerAxis = null }: ContentCardProps) {
   const [editedContent, setEditedContent] = useState<ContentItem>(content)
   const [newVideo, setNewVideo] = useState("")
   const [uploading, setUploading] = useState(false)
@@ -50,8 +54,10 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
         type: "trainee",
         eixo: "trainee"
       }))
+    } else if (managerAxis) {
+      setEditedContent(prev => ({ ...prev, type: "membro", eixo: managerAxis }))
     }
-  }, [userType])
+  }, [userType, managerAxis])
 
   // O eixo "trainee" é o que a biblioteca do trainee filtra: um material do tipo
   // trainee com outro eixo (dado legado ou corrigido fora do formulário) fica
@@ -138,10 +144,13 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
 
   // ---------- Videos ----------
   const addVideo = () => {
-    if (newVideo) {
+    const typed = newVideo.trim()
+    if (typed) {
+      // "youtube.com/..." sem protocolo também é aceito, como https.
+      const video = /^[a-z][a-z0-9+.-]*:/i.test(typed) ? typed : `https://${typed}`
       setEditedContent({
         ...editedContent,
-        videos: [...(editedContent.videos || []), newVideo],
+        videos: [...(editedContent.videos || []), video],
       })
       setNewVideo("")
     }
@@ -180,7 +189,18 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
         </div>
 
         {/* Tipo de Conteúdo */}
-        {userType !== "organizador" ? (
+        {managerAxis ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="content-type-locked">Tipo de Conteúdo</Label>
+              <Input id="content-type-locked" value="Membro" disabled className="bg-secondary border-border" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="content-axis-locked">Eixo de Comercial</Label>
+              <Input id="content-axis-locked" value={memberAxisLabels[managerAxis]} disabled className="bg-secondary border-border" />
+            </div>
+          </div>
+        ) : userType !== "organizador" ? (
           <div className="space-y-2">
             <Label>Tipo de Conteúdo</Label>
             <Select
@@ -210,7 +230,7 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
         )}
 
         {/* Eixo */}
-        {userType !== "organizador" ? (
+        {managerAxis ? null : userType !== "organizador" ? (
           editedContent.type === "membro" ? (
             <div className="space-y-2">
               <Label>Eixo de Comercial</Label>
@@ -257,7 +277,19 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
             }
             placeholder="Digite o conteúdo de texto..."
             rows={4}
+            aria-describedby="content-text-hint"
           />
+          <p id="content-text-hint" className="text-xs text-muted-foreground">
+            Endereços começando com http:// ou https:// viram links clicáveis.
+          </p>
+          {editedContent.text?.trim() && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Pré-visualização</p>
+              <div aria-live="polite" className="max-h-64 overflow-y-auto rounded-lg border border-border bg-muted/50 p-3 text-sm leading-relaxed text-foreground whitespace-pre-wrap break-words">
+                <LinkedText text={editedContent.text} />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Documentos — upload real */}
@@ -343,8 +375,17 @@ export function ContentCard({ content, onClose, onSave, userType = "admin" }: Co
                 key={index}
                 className="flex items-center gap-2 p-2 bg-muted rounded-lg"
               >
-                <Video className="h-4 w-4 text-primary" />
-                <span className="flex-1 text-sm truncate">{video}</span>
+                <Video className="h-4 w-4 text-primary shrink-0" />
+                {safeHref(video) ? (
+                  <a href={safeHref(video)!} target="_blank" rel="noopener noreferrer" title={video}
+                    className="flex flex-1 items-center gap-1 truncate text-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm">
+                    <span className="truncate">{video}</span>
+                    <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    <span className="sr-only">(abre em nova aba)</span>
+                  </a>
+                ) : (
+                  <span className="flex-1 text-sm truncate" title="Endereço inválido: use http:// ou https://">{video}</span>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"

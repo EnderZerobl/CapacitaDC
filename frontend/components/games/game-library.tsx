@@ -28,7 +28,7 @@ const formatCards = [
   { format: "categorization" as const, icon: Layers, action: "Criar classificação" },
 ]
 
-export function GameLibrary({ isOrganizer }: { isOrganizer: boolean }) {
+export function GameLibrary({ isOrganizer, managerAxis = null }: { isOrganizer: boolean; managerAxis?: string | null }) {
   const [games, setGames] = useState<Game[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -36,7 +36,9 @@ export function GameLibrary({ isOrganizer }: { isOrganizer: boolean }) {
   const [editing, setEditing] = useState<{ key: string; game: Game | null; format: GameFormat } | null>(null)
   const [preview, setPreview] = useState<Game | null>(null)
   const [busy, setBusy] = useState(false)
-  const axes = isOrganizer ? allAxes.filter(axis => axis.value === "trainee") : allAxes
+  // O servidor recusa outros eixos; a lista só evita oferecer o que será recusado.
+  const axes = managerAxis ? allAxes.filter(axis => axis.value === managerAxis)
+    : isOrganizer ? allAxes.filter(axis => axis.value === "trainee") : allAxes
   const load = useCallback(async () => {
     setLoading(true)
     setError("")

@@ -44,8 +44,9 @@ class NodeContentTests(unittest.TestCase):
         self.assertEqual(len(content['material']['videos']), 1)
         self.assertEqual(len(content['material']['documents']), 1)
         self.assertFalse(content['node']['completed'])
+        # A biblioteca usa o mesmo vínculo da etapa: a referência antiga não libera nada.
         _, listing = self.request('GET', '/api/materials', role='trainee')
-        self.assertIn(library_only['id'], [item['id'] for item in listing])
+        self.assertEqual([item['id'] for item in listing], [material['id']])
         status, _ = self.request('POST', f"/api/activities/{activity['id']}/submit",
                                  {'node_id': node['id'], 'comment': 'Minha resposta'}, role='trainee')
         self.assertEqual(status, 200)

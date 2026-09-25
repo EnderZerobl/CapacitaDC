@@ -10,9 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app import models, schemas
-from app.auth import get_current_user, get_current_organizador_or_admin
-from app.services import access, blob_storage
-from app.services.activity_service import submission_to_out
+from app.auth import get_current_user, get_current_staff
+from app.services import access, blob_storage, material_files
+from app.services.activity_service import axis_metrics, submission_to_out
+from app.services.roles import MEMBER_AXES, normalize_axis
 
 router = APIRouter()
 
@@ -29,7 +30,8 @@ MATERIAL_BLOB_PREFIX = "materials"
 @router.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_staff),
 ):
     name = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
@@ -46,20 +48,29 @@ async def upload_file(
     pathname = blob_storage.upload(
         f"{MATERIAL_BLOB_PREFIX}/{safe_name}", contents, content_type=mimetypes.guess_type(name)[0],
     )
-    return {"url": f"/api/uploads/{pathname}", "name": file.filename}
+    # Até ser vinculado a um material, o arquivo só é visível para quem o enviou.
+    try:
+        material_files.record_upload(db, current_user, pathname)
+        db.commit()
+    except Exception:
+        db.rollback()
+        blob_storage.delete(pathname)
+        raise
+    return {"url": material_files.upload_url(pathname), "name": file.filename}
 
 
 @router.get("/uploads/{pathname:path}")
 def download_uploaded_file(
     pathname: str,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Serves both material documents and any other /api/upload file.
+    """Serves material documents, authorized through the material that lists them.
 
-    Requires only a logged-in user: the legacy static /uploads mount this
-    replaces had no auth at all, so this is strictly tighter, not scoped
-    per-material — the private Blob store already keeps it off the open web.
+    Knowing the URL is not enough: a participant needs a trail step that reached
+    the material, and staff need the material inside their own scope.
     """
+    material_files.ensure_file_access(db, current_user, pathname)
     data = blob_storage.download(pathname)
     if data is None:
         raise HTTPException(status_code=404, detail="Arquivo não encontrado")
@@ -77,6 +88,15 @@ def get_leaderboard(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    if current_user.type == "gerente":
+        eixos = access.manageable_eixos(current_user)
+        entries = [
+            schemas.LeaderboardEntry.model_validate(user).model_copy(update={
+                "pontos_acumulados": axis_metrics(db, user.id, eixos)["pontos_acumulados"],
+            })
+            for user in access.managed_users(db, current_user)
+        ]
+        return sorted(entries, key=lambda entry: entry.pontos_acumulados, reverse=True)
     return db.query(models.User).filter(
         models.User.type.in_(["trainee", "membro"])
     ).order_by(models.User.pontos_acumulados.desc()).all()
@@ -87,8 +107,19 @@ def get_leaderboard(
 @router.get("/grades", response_model=List[schemas.GradeRow])
 def get_grades(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
+    if current_user.type == "gerente":
+        # Cada coluna conta apenas a trilha do gerente, inclusive pontos e média.
+        eixos = access.manageable_eixos(current_user)
+        rows = []
+        for u in access.managed_users(db, current_user):
+            rows.append(schemas.GradeRow(
+                id=u.id, name=u.name, email=u.email, cargo=u.cargo, type=u.type,
+                eixo=u.eixo, rotacao=u.rotacao, **axis_metrics(db, u.id, eixos),
+            ))
+        return rows
+
     if current_user.type == "organizador":
         users = db.query(models.User).filter(models.User.type == "trainee").all()
         total_nodes_map = {
@@ -108,14 +139,10 @@ def get_grades(
                     models.TrainingNode.eixo == "trainee"
                 ).count()
             else:
-                eixo_key = (u.eixo or "").lower()
-                total_nodes_map[u.id] = 0
-                for e in ["vendas", "conexoes", "experiencia"]:
-                    if e in eixo_key:
-                        total_nodes_map[u.id] = db.query(models.TrainingNode).filter(
-                            models.TrainingNode.eixo == e
-                        ).count()
-                        break
+                eixo = normalize_axis(u.eixo)
+                total_nodes_map[u.id] = db.query(models.TrainingNode).filter(
+                    models.TrainingNode.eixo == eixo
+                ).count() if eixo in MEMBER_AXES else 0
 
     result = []
     for u in users:
@@ -158,7 +185,7 @@ def list_submissions(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_organizador_or_admin),
+    current_user: models.User = Depends(get_current_staff),
 ):
     """Every delivery in one queue, pending first, so nothing waits unnoticed.
 
@@ -178,9 +205,13 @@ def list_submissions(
     manageable = access.manageable_eixos(current_user)
     if manageable is not None:
         query = query.filter(models.Activity.eixo.in_(manageable))
-    # Quem corrige não aparece na própria fila; o organizador só acompanha trainees.
+    # Quem corrige não aparece na própria fila; o organizador só acompanha trainees
+    # e o gerente, os membros do próprio eixo — a atividade do eixo não basta.
     visible_types = ["trainee"] if current_user.type == "organizador" else ["trainee", "membro"]
     query = query.filter(models.User.type.in_(visible_types))
+    followed = access.managed_user_ids(db, current_user)
+    if followed is not None:
+        query = query.filter(models.User.id.in_(followed))
 
     if status == "pending":
         query = query.filter(models.ActivitySubmission.grade.is_(None))

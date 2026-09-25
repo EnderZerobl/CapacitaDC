@@ -6,6 +6,7 @@
 | --- | --- |
 | Administrador | Cadastra e gerencia pessoas, materiais, atividades, jogos e trilhas; consulta e corrige entregas de membros e trainees. |
 | Organizador do PlugInfo | Cadastra e gerencia trainees e seu conteúdo; acompanha entregas e corrige atividades desse público. Não entrega atividades nem acumula progresso de participante. |
+| Gerente | Vinculado a um único eixo comercial. Gerencia os membros, materiais, atividades, jogos e a trilha desse eixo e corrige as entregas dos seus membros. Não entrega atividades nem acumula progresso de participante. |
 | Membro | Consome conteúdo comercial, joga, entrega atividades e acompanha seus resultados. |
 | Trainee | Consome conteúdo para trainees, joga, entrega atividades e acompanha seus resultados. |
 
@@ -13,11 +14,30 @@
 
 A API verifica permissões também nas operações por ID. Ocultar botões na interface não é a única proteção. Contas administrativas usam a pré-visualização dos jogos, que não gera pontos.
 
+### Gerentes por eixo
+
+Somente o administrador nomeia gerentes, troca seu eixo ou os remove do cargo; o eixo é obrigatório e deve ser `vendas`, `conexoes` ou `experiencia`. Pode haver mais de um gerente no mesmo eixo. Papel e eixo são lidos do banco a cada requisição, então uma mudança feita pelo administrador vale também para sessões já abertas. Um gerente com eixo ausente ou desconhecido não tem acesso de gestão.
+
+| Operação | Próprio eixo | Outros eixos, `all` e `trainee` |
+| --- | --- | --- |
+| Listar, consultar, cadastrar, editar (inclusive senha) e excluir membros | Sim, somente `type="membro"` | Não |
+| Promover, mudar perfil, cargo ou eixo de alguém | Não | Não |
+| Nomear ou editar gerentes, administradores, organizadores e trainees | Não | Não |
+| Materiais de membros, documentos e vídeos | Sim | Não |
+| Etapas, ordem, liberação e agendamento da trilha | Sim | Não |
+| Atividades e jogos | Sim | Não |
+| Consultar e corrigir entregas, baixar anexos | Sim, de membros do próprio eixo em atividades do próprio eixo | Não |
+| Notas, progresso, perfil e ranking | Apenas membros e trilha do próprio eixo (pontos e média contados só nesse eixo) | Não |
+
+Os vínculos também são conferidos: não é possível ligar material, atividade, jogo ou pré-requisito de outro eixo, nem mover um recurso para fora do eixo. Como membros enxergam as trilhas dos três eixos, uma atividade pode ter entregas de membros de outro eixo; nesse caso excluí-la ou mudar seu peso (o que alteraria notas de outras pessoas) fica com o administrador. O mesmo vale para conteúdos antigos compartilhados com a trilha de outro eixo.
+
+Usuários antigos podem ter o eixo gravado pelo nome de exibição ("Vendas", "Conexões", "Experiência do Consumidor"). Esses nomes exatos produzem a mesma autorização que os códigos; valores desconhecidos negam o acesso em vez de serem adivinhados. Novas gravações usam o código, e a interface exibe o nome completo.
+
 ## Caminhos principais
 
 - `/login` e `/cadastro`: autenticação e cadastro público de trainee.
-- `/`: painel de administração, com pessoas, materiais, atividades, **Correções**, notas e trilhas.
-- `/jogos`: biblioteca e autoria de jogos, acessível a administradores e organizadores.
+- `/`: painel de administração, com pessoas, materiais, atividades, **Correções**, notas e trilhas. Para o gerente, o painel se identifica como **Gerente — <eixo>** e mostra apenas o seu escopo.
+- `/jogos`: biblioteca e autoria de jogos, acessível a administradores, organizadores e gerentes (estes, no próprio eixo).
 - `/membros` e `/trainees`: consumo de conteúdo, trilhas e entregas.
 - `/perfil/[id]`: consulta administrativa do progresso, entregas e média calculada. A média não é editada nesse perfil.
 - `/recuperar-senha`: informa que a recuperação automática está indisponível e orienta procurar a administração; não simula envio de email.
@@ -43,7 +63,7 @@ Atividades podem ser associadas a etapas da trilha. Uma entrega válida conclui 
 4. Digite a **nota de 0 a 10**, acrescente feedback e salve. Uma nota zero é válida.
 5. A média da pessoa é recalculada e a planilha de notas atualiza. No filtro de pendentes, a entrega corrigida sai da fila.
 
-A mesma correção também pode ser feita na lista de envios dentro de uma atividade. O administrador acompanha membros e trainees; o organizador só recebe na fila os envios de trainees em atividades que pode gerenciar.
+A mesma correção também pode ser feita na lista de envios dentro de uma atividade. O administrador acompanha membros e trainees; o organizador só recebe na fila os envios de trainees em atividades que pode gerenciar; o gerente, os envios de membros do próprio eixo em atividades desse eixo — estar numa atividade do eixo não basta.
 
 Ao reenviar conteúdo diferente, a correção anterior é retirada, a entrega volta a pendente e a média é recalculada. Repetir a mesma entrega não duplica seu registro nem remove uma correção sem mudança no conteúdo.
 
@@ -67,7 +87,11 @@ Pontuação de jogos/ranking e nota de atividades são medidas diferentes. Os po
 
 O fluxo de autoria de conteúdo é **material → atividade → nó**: crie o material na biblioteca, selecione-o na atividade e vincule a atividade ao nó. Materiais também podem existir apenas na biblioteca, sem atividade ou nó. A criação de nós oferece atividade ou versão publicada de jogo; nós antigos de leitura continuam compatíveis. No gerenciamento da trilha é possível vincular ou trocar a atividade de um nó existente. Ao abrir a etapa, `GET /api/nodes/{id}/content` retorna sua atividade, o material dessa atividade (texto, documentos e vídeos) e a entrega do participante, depois de verificar as permissões e o desbloqueio. O leitor não depende da lista de materiais já carregada no navegador. A trilha é sequencial por eixo: a etapa anterior na ordem é o pré-requisito implícito. Quando existe um pré-requisito explícito, ele prevalece. As conexões visuais seguem a regra usada pela API.
 
-O administrador pode liberar etapas imediatamente ou agendar a liberação. Participantes só abrem etapas liberadas e com pré-requisitos concluídos. Materiais e atividades vinculados exclusivamente a etapas bloqueadas não aparecem nas bibliotecas do participante; material sem etapa permanece disponível conforme seu público.
+O administrador pode liberar etapas imediatamente ou agendar a liberação. Participantes só abrem etapas liberadas e com pré-requisitos concluídos.
+
+A biblioteca do participante mostra apenas materiais de etapas que ele já **alcançou**: a etapa pertence a uma trilha que ele pode ver, está liberada, o agendamento já passou e o pré-requisito efetivo foi concluído. Alcançar não é concluir: com as etapas 1 e 2 concluídas e a 3 aberta, os materiais das três aparecem. O vínculo é o mesmo usado na leitura da etapa (o material da atividade, ou a referência direta de etapas antigas de leitura); basta uma etapa alcançada para um material com vários vínculos, e ele aparece uma vez. Materiais sem etapa, ou ligados apenas a atividades fora da trilha, ficam restritos à autoria no painel. Bloquear de novo uma etapa ou remover o vínculo recalcula o acesso na consulta seguinte. Atividades fora da trilha continuam visíveis como antes.
+
+URLs `http://` e `https://` no texto de um material viram links clicáveis na pré-visualização do editor, na biblioteca e na leitura pela trilha, inclusive em materiais já existentes. Os links abrem em nova aba; o texto nunca é interpretado como HTML e outros protocolos não viram link. Os vídeos cadastrados também são links clicáveis.
 
 Reordenar muda a sequência implícita. Excluir ou alterar conteúdos já usados pode afetar acesso e progresso; confira os vínculos antes de fazê-lo. Conteúdo já concluído pode continuar sendo consultado conforme as regras de visibilidade.
 
@@ -78,6 +102,10 @@ O formulário apresenta **anexos → links → comentários**. Cada entrega acei
 Os participantes enviam arquivos por `POST /api/activities/{id}/attachments` e informam seus IDs ao entregar a atividade. A API verifica o autor, a atividade, a liberação da etapa e os limites. Os anexos ficam num Vercel Blob privado (não em disco local, incompatível com o compute stateless da Vercel), e são baixados por uma rota autenticada pelo autor ou pelos gestores autorizados após a entrega. Eles aparecem na entrega, na fila de correções e no perfil. Alterar anexos, links ou comentário invalida a correção anterior, como já ocorria ao alterar a resposta.
 
 A migração 5 adiciona a lista de links e a tabela de anexos, preservando links e notas das entregas antigas. A pasta privada de anexos também precisa de armazenamento persistente e backup.
+
+## Documentos dos materiais
+
+Documentos enviados por `POST /api/upload` ficam no mesmo Blob privado e são registrados com quem os enviou (e o eixo, no caso de gerentes) na tabela `material_uploads`. `GET /api/uploads/{pathname}` só entrega o arquivo por meio do material que o lista: o participante precisa ter alcançado uma etapa desse material, e a equipe precisa ter o material no próprio escopo. Antes de ser vinculado, o arquivo só é aberto por quem o enviou, por outro gerente do mesmo eixo ou pelo administrador. Arquivos antigos, sem registro de envio, são autorizados pelos documentos já cadastrados; arquivos sem associação verificável são negados. Ao salvar um material, documentos internos precisam ter sido enviados pela pessoa ou pertencer a um material do seu escopo, inclusive quando informados por URL absoluta. Links externos de documentos e vídeos abrem diretamente, sem o token da sessão, e não são controlados pelo aplicativo.
 
 ## Jogos disponíveis
 
@@ -121,7 +149,10 @@ Diálogos com ramificações já podem ser representados pelo cenário; uma vers
 - `frontend/features/`: tipos, chamadas de API e hooks de cada recurso.
 - `frontend/components/`: formulários, fila de correções, trilhas e jogos.
 - `backend/app/api/`: rotas HTTP.
-- `backend/app/services/access.py`: escopo de acesso, gestão e pré-requisitos.
+- `backend/app/services/roles.py`: papéis e normalização dos eixos de membros.
+- `backend/app/services/access.py`: escopo de acesso, gestão de pessoas, vínculos entre eixos e pré-requisitos.
+- `backend/app/services/node_service.py`: trilha, desbloqueio e conteúdos alcançados pelo participante.
+- `backend/app/services/material_files.py`: autorização dos documentos dos materiais.
 - `backend/app/services/activity_service.py`: média ponderada e serialização de entregas.
 - `backend/app/services/game_service.py`: publicações, tentativas e avaliação.
 - `backend/app/models.py`, `schemas.py` e `game_schemas.py`: persistência e validação.
@@ -143,9 +174,9 @@ Rotas principais (consulte `/docs` na API para o contrato completo):
 | Conteúdo da etapa | `GET /api/nodes/{id}/content`, `PATCH /api/nodes/{id}/activity` |
 | Jogos | `GET/POST /api/games`, edição, duplicação, publicação e versões por ID |
 | Tentativas | `POST /api/nodes/{id}/attempts`, leitura e respostas/conclusão em `/api/game-attempts/{id}` |
-| Arquivos | `POST /api/upload`, leitura autenticada em `GET /api/uploads/{pathname}` |
+| Arquivos | `POST /api/upload`, leitura autorizada pelo material em `GET /api/uploads/{pathname}` |
 
-As coleções aceitam as formas de URL utilizadas no frontend sem redirecionar a autenticação. As sessões novas usam ID de usuário estável no token. Respostas 401 significam sessão inválida, 403 falta de permissão, 422 erro de validação e 5xx falha do servidor. Erro temporário de `/auth/me` não apaga a sessão.
+As coleções aceitam as formas de URL utilizadas no frontend sem redirecionar a autenticação. As sessões novas usam ID de usuário estável no token. Respostas 401 significam sessão inválida, 403 falta de permissão, 422 erro de validação e 5xx falha do servidor. Erro temporário de `/auth/me` não apaga a sessão. A interface mostra o motivo de uma recusa 403 e confere a sessão de novo (também ao voltar para a aba); se papel ou eixo mudaram, o painel se recria sem manter dados do escopo anterior.
 
 ## Migrações e manutenção
 
@@ -155,6 +186,9 @@ As migrações rodam na inicialização da API e registram versões em `schema_m
 2. Unicidade do progresso por pessoa/etapa; registros duplicados antigos são consolidados preservando melhor resultado e conclusão, sem recalcular os pontos históricos.
 3. Conversão do antigo conteúdo `pluginfo` para `trainee`. Etapas convertidas são colocadas após as existentes e bloqueadas; o papel organizador é preservado.
 4. Garantia da coluna de peso, backup das notas manuais antigas em `nota_rotacao_backup_v4` e recálculo das médias pelas entregas corrigidas.
+5. Lista de links e tabela de anexos das entregas.
+
+O papel de gerente reaproveita as colunas `users.type` e `users.eixo` e não exige migração de dados: nomes de eixo antigos são normalizados na leitura e convertidos para o código na próxima gravação. A tabela `material_uploads` é criada na inicialização como as demais tabelas novas.
 
 Antes de atualizar uma instalação, faça backup do PostgreSQL; os uploads vivem num Vercel Blob privado, fora do banco. Bancos, senhas, tokens e caches não pertencem ao Git. Os testes automatizados exercitam as migrações em SQLite; a migração do ambiente PostgreSQL deve ser validada em uma cópia antes de aplicar em produção.
 

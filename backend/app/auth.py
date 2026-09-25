@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.config import settings
 from app import models
+from app.services.roles import STAFF, manager_axis
 
 # Password hashing configuration
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -87,9 +88,22 @@ def get_current_organizador_or_admin(current_user: models.User = Depends(get_cur
     return current_user
 
 def get_current_member_or_above(current_user: models.User = Depends(get_current_user)) -> models.User:
-    if current_user.type not in ["admin", "organizador", "membro"]:
+    if current_user.type not in ["admin", "organizador", "gerente", "membro"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acesso não autorizado.",
+        )
+    return current_user
+
+
+def get_current_staff(current_user: models.User = Depends(get_current_user)) -> models.User:
+    """Entry to the administrative panel. What each role may change is checked per resource.
+
+    A manager whose axis is missing or unknown gets no access at all, never a global one.
+    """
+    if current_user.type not in STAFF or (current_user.type == "gerente" and manager_axis(current_user) is None):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso não autorizado. Seu perfil não tem permissão de gestão.",
         )
     return current_user

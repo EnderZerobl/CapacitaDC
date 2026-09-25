@@ -14,8 +14,8 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     cargo = Column(String, nullable=False)
-    type = Column(String, nullable=False)  # "admin", "organizador", "membro", "trainee"
-    eixo = Column(String, nullable=True)   # "Vendas", "Conexões", "Experiência do Consumidor", etc.
+    type = Column(String, nullable=False)  # "admin", "organizador", "gerente", "membro", "trainee"
+    eixo = Column(String, nullable=True)   # "vendas", "conexoes", "experiencia"; registros antigos usam o nome de exibição
     photo = Column(String, nullable=True, default="")
     nota_rotacao = Column(Float, nullable=True)
     pontos_acumulados = Column(Integer, default=0, nullable=False)
@@ -235,3 +235,12 @@ class SubmissionAttachment(Base):
     @property
     def url(self):
         return f"/api/activities/{self.activity_id}/attachments/{self.id}"
+
+
+class MaterialUpload(Base):
+    """Who sent a material file, so it stays private until linked to a material."""
+    __tablename__ = "material_uploads"
+    id = Column(String, primary_key=True, default=generate_uuid)
+    storage_key = Column(String, unique=True, nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    eixo = Column(String, nullable=True)  # eixo do gerente que enviou; nulo para os demais perfis
