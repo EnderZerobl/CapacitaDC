@@ -65,7 +65,7 @@ export function CorrectionRow({ submission, showContext = false, onGrade, onDele
         )}
         {onDelete && (
           <Button size="sm" variant="ghost" disabled={deleting}
-            className="h-6 w-6 p-0 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+            className="h-6 w-6 p-0 text-rose-400 light:text-rose-700 hover:text-rose-300 light:hover:text-rose-800 hover:bg-rose-500/10"
             onClick={() => void remove()} aria-label="Excluir envio">
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
@@ -77,7 +77,7 @@ export function CorrectionRow({ submission, showContext = false, onGrade, onDele
         <span className="text-xs text-foreground">{submission.activity_title}</span>
         {submission.activity_weight != null && <Badge variant="outline" className="text-[10px]">peso {submission.activity_weight}</Badge>}
         {submission.user_type && <Badge variant="secondary" className="text-[10px]">{submission.user_type}</Badge>}
-        {submission.grade == null && <Badge className="bg-amber-500/20 text-amber-400 text-[10px]">Pendente</Badge>}
+        {submission.grade == null && <Badge className="bg-amber-500/20 text-amber-400 light:text-amber-700 text-[10px]">Pendente</Badge>}
       </div>
     )}
     <SubmissionContent submission={submission} />
@@ -94,7 +94,7 @@ export function CorrectionRow({ submission, showContext = false, onGrade, onDele
     </div>
     {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
     {submission.grade != null && (
-      <p className="text-xs font-semibold text-emerald-400">Nota atual: {submission.grade.toFixed(1)}</p>
+      <p className="text-xs font-semibold text-emerald-400 light:text-emerald-700">Nota atual: {submission.grade.toFixed(1)}</p>
     )}
   </div>
 }

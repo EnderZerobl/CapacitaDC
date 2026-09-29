@@ -11,7 +11,6 @@ from app.database import get_db
 from app import models, schemas
 from app.auth import (
     get_password_hash,
-    get_current_member_or_above,
     get_current_staff,
 )
 from app.services import access
@@ -43,8 +42,9 @@ def _scoped_to_manager(db: Session, current_user: models.User, user: models.User
 @router.get("/", response_model=List[schemas.UserOut], include_in_schema=False)
 def get_users(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_member_or_above),
+    current_user: models.User = Depends(get_current_staff),
 ):
+    """Only the management panel lists people; participants get nobody's data."""
     if current_user.type == "gerente":
         return [_scoped_to_manager(db, current_user, user) for user in access.managed_users(db, current_user)]
     if current_user.type == "organizador":

@@ -8,7 +8,8 @@ import type { Game } from "@/features/games/types"
 import { apiClient } from "@/lib/api-client"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
-import { axisLabel, homePath, isStaff, managerAxis, memberAxisLabels } from "@/lib/roles"
+import { ThemeToggle } from "@/components/theme-toggle"
+import { axisLabel, groupByEixo, homePath, isStaff, managerAxis, memberAxisLabels } from "@/lib/roles"
 import { UsersSection } from "@/components/dashboard/users-section"
 import { MemberForm } from "@/components/dashboard/member-form"
 import { ContentList } from "@/components/dashboard/content-list"
@@ -258,23 +259,20 @@ function DashboardContent() {
   const axisName = axis ? memberAxisLabels[axis] : ""
 
   function getNodeStatus(node: TrainingNode) {
-    if (!node.is_released) return { label: "Bloqueado", color: "text-rose-400 border-rose-500/30", icon: Lock }
+    if (!node.is_released) return { label: "Bloqueado", color: "text-rose-400 light:text-rose-700 border-rose-500/30", icon: Lock }
     if (node.released_at) {
       const releaseDate = new Date(node.released_at)
-      if (releaseDate > new Date()) return { label: `Agendado`, color: "text-amber-400 border-amber-500/30", icon: Clock }
+      if (releaseDate > new Date()) return { label: `Agendado`, color: "text-amber-400 light:text-amber-700 border-amber-500/30", icon: Clock }
     }
-    return { label: "Liberado", color: "text-emerald-400 border-emerald-500/30", icon: CheckCircle2 }
+    return { label: "Liberado", color: "text-emerald-400 light:text-emerald-700 border-emerald-500/30", icon: CheckCircle2 }
   }
 
-  const nodesByEixo: Record<string, TrainingNode[]> = {}
   const filteredNodes = isOrg ? nodes.filter(n => n.eixo === "trainee") : nodes
-  filteredNodes.forEach(n => { if (!nodesByEixo[n.eixo]) nodesByEixo[n.eixo] = []; nodesByEixo[n.eixo].push(n) })
-  Object.keys(nodesByEixo).forEach(key => { nodesByEixo[key].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)) })
-
-  const eixoLabel: Record<string, string> = {
-    trainee: "Trainee (Geral)", vendas: "Vendas", conexoes: "Conexões",
-    experiencia: "Experiência do Consumidor",
-  }
+  const nodeGroups = groupByEixo(filteredNodes).map(group => ({
+    ...group, items: [...group.items].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0)),
+  }))
+  // Correções já separa por eixo no próprio componente; aqui só as atividades.
+  const activityGroups = groupByEixo(activities)
 
   return (
     <main className="min-h-screen bg-background">
@@ -306,6 +304,7 @@ function DashboardContent() {
                   </Badge>
                 </div>
               )}
+              <ThemeToggle />
               <Button
                 variant="ghost"
                 size="sm"
@@ -501,8 +500,12 @@ function DashboardContent() {
               </div>
             )}
 
-            <div className="space-y-4">
-              {activities.map((act) => {
+            <div className="space-y-8">
+              {activityGroups.map(({ eixo, label, items }) => (
+              <div key={eixo} className="space-y-3">
+                <h3 className="text-base font-semibold text-foreground border-b border-border pb-2">{label}</h3>
+                <div className="space-y-4">
+                {items.map((act) => {
                 const isOpen = act.effective_open
                 const isExpanded = expandedActivity === act.id
                 const subs = activitySubmissions[act.id] || []
@@ -515,9 +518,9 @@ function DashboardContent() {
                           <CardTitle className="text-sm font-bold text-foreground flex items-center gap-2">
                             {act.title}
                             {isOpen ? (
-                              <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[9px]">Aberta</Badge>
+                              <Badge className="bg-emerald-500/10 text-emerald-400 light:text-emerald-700 border-emerald-500/30 text-[9px]">Aberta</Badge>
                             ) : (
-                              <Badge variant="outline" className="text-rose-400 border-rose-500/30 text-[9px]">Fechada</Badge>
+                              <Badge variant="outline" className="text-rose-400 light:text-rose-700 border-rose-500/30 text-[9px]">Fechada</Badge>
                             )}
                             {act.accepts_file && (
                               <Badge variant="outline" className="text-primary border-primary/30 text-[9px]">
@@ -530,7 +533,7 @@ function DashboardContent() {
                             <p className="text-xs text-muted-foreground mt-1">{act.description}</p>
                           )}
                           {act.deadline && (
-                            <p className="text-[10px] text-amber-400 flex items-center gap-1 mt-1">
+                            <p className="text-[10px] text-amber-400 light:text-amber-700 flex items-center gap-1 mt-1">
                               <Clock className="h-3 w-3" />
                               Prazo: {new Date(act.deadline).toLocaleString("pt-BR")}
                             </p>
@@ -551,7 +554,7 @@ function DashboardContent() {
                             className="text-xs h-7 px-2"
                             onClick={() => handleToggleActivity(act.id, act.is_open)}
                           >
-                            {act.is_open ? <><XCircle className="h-3 w-3 mr-1 text-rose-400" />Fechar</> : <><CheckCircle2 className="h-3 w-3 mr-1 text-emerald-400" />Abrir</>}
+                            {act.is_open ? <><XCircle className="h-3 w-3 mr-1 text-rose-400 light:text-rose-700" />Fechar</> : <><CheckCircle2 className="h-3 w-3 mr-1 text-emerald-400 light:text-emerald-700" />Abrir</>}
                           </Button>
                           <Button
                             size="sm"
@@ -565,7 +568,7 @@ function DashboardContent() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="text-rose-400 hover:text-rose-300 h-7 w-7 p-0"
+                            className="text-rose-400 light:text-rose-700 hover:text-rose-300 light:hover:text-rose-800 h-7 w-7 p-0"
                             onClick={() => handleDeleteActivity(act.id)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -669,7 +672,10 @@ function DashboardContent() {
                     )}
                   </Card>
                 )
-              })}
+                })}
+                </div>
+              </div>
+              ))}
             </div>
           </TabsContent>
 
@@ -723,7 +729,7 @@ function DashboardContent() {
                             <td className="p-3 font-medium text-foreground">{row.name}</td>
                             <td className="p-3 text-center">
                               {row.nodes_total > 0
-                                ? <span className={row.nodes_completed / row.nodes_total >= 0.8 ? "text-emerald-400 font-semibold" : "text-muted-foreground"}>
+                                ? <span className={row.nodes_completed / row.nodes_total >= 0.8 ? "text-emerald-400 light:text-emerald-700 font-semibold" : "text-muted-foreground"}>
                                     {Math.round((row.nodes_completed / row.nodes_total) * 100)}%
                                   </span>
                                 : <span className="text-muted-foreground/40">—</span>
@@ -734,7 +740,7 @@ function DashboardContent() {
                             </td>
                             <td className="p-3 text-center">
                               {row.nota_rotacao != null
-                                ? <span className={`font-bold ${row.nota_rotacao >= 7 ? "text-emerald-400" : row.nota_rotacao >= 5 ? "text-amber-400" : "text-rose-400"}`}>
+                                ? <span className={`font-bold ${row.nota_rotacao >= 7 ? "text-emerald-400 light:text-emerald-700" : row.nota_rotacao >= 5 ? "text-amber-400 light:text-amber-700" : "text-rose-400 light:text-rose-700"}`}>
                                     {row.nota_rotacao.toFixed(2)}
                                   </span>
                                 : <span className="text-muted-foreground/40">—</span>
@@ -782,7 +788,7 @@ function DashboardContent() {
                             <td className="p-3 text-muted-foreground">{axisLabel(row.eixo)}</td>
                             <td className="p-3 text-center">
                               {row.nodes_total > 0
-                                ? <span className={row.nodes_completed / row.nodes_total >= 0.8 ? "text-emerald-400 font-semibold" : "text-muted-foreground"}>
+                                ? <span className={row.nodes_completed / row.nodes_total >= 0.8 ? "text-emerald-400 light:text-emerald-700 font-semibold" : "text-muted-foreground"}>
                                     {Math.round((row.nodes_completed / row.nodes_total) * 100)}%
                                   </span>
                                 : <span className="text-muted-foreground/40">—</span>
@@ -791,7 +797,7 @@ function DashboardContent() {
                             <td className="p-3 text-center text-muted-foreground">{row.activities_graded}/{row.activities_submitted}</td>
                             <td className="p-3 text-center">
                               {row.nota_rotacao != null
-                                ? <span className={`font-bold ${row.nota_rotacao >= 7 ? "text-emerald-400" : row.nota_rotacao >= 5 ? "text-amber-400" : "text-rose-400"}`}>{row.nota_rotacao.toFixed(2)}</span>
+                                ? <span className={`font-bold ${row.nota_rotacao >= 7 ? "text-emerald-400 light:text-emerald-700" : row.nota_rotacao >= 5 ? "text-amber-400 light:text-amber-700" : "text-rose-400 light:text-rose-700"}`}>{row.nota_rotacao.toFixed(2)}</span>
                                 : <span className="text-muted-foreground/40">—</span>}
                             </td>
                             <td className="p-3 text-center text-primary font-semibold">{row.pontos_acumulados}</td>
@@ -973,10 +979,10 @@ function DashboardContent() {
               </div>
             ) : nodes.length > 0 ? (
               <div className="space-y-8">
-                {Object.entries(nodesByEixo).map(([eixo, eixoNodes]) => (
+                {nodeGroups.map(({ eixo, label, items: eixoNodes }) => (
                   <div key={eixo} className="space-y-3">
                     <h3 className="text-base font-semibold text-foreground border-b border-border pb-2">
-                      {eixoLabel[eixo] || eixo}
+                      {label}
                     </h3>
                     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {eixoNodes.map((node) => {
@@ -998,20 +1004,20 @@ function DashboardContent() {
                         return (
                           <Card key={node.id} className="border-border bg-card">
                             <CardHeader className="pb-3">
-                              <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-start justify-between gap-2 min-w-0">
                                 <div className="flex items-center gap-2 min-w-0">
                                   <div className={`p-1.5 rounded-lg ${node.type === "game" ? "bg-violet-500/10" : "bg-primary/10"}`}>
                                     {node.type === "game"
-                                      ? <Gamepad2 className="h-4 w-4 text-violet-400" />
+                                      ? <Gamepad2 className="h-4 w-4 text-violet-400 light:text-violet-700" />
                                       : <BookOpen className="h-4 w-4 text-primary" />
                                     }
                                   </div>
-                                  <div>
+                                  <div className="flex-1 min-w-0">
                                     <CardTitle className="text-sm font-semibold text-foreground truncate">
                                       {node.name}
                                     </CardTitle>
                                     {node.deadline && (
-                                      <p className="text-[10px] text-amber-400 flex items-center gap-1 mt-0.5 font-medium">
+                                      <p className="text-[10px] text-amber-400 light:text-amber-700 flex items-center gap-1 mt-0.5 font-medium">
                                         <Clock className="h-3 w-3" /> Prazo: {new Date(node.deadline).toLocaleString("pt-BR")}
                                       </p>
                                     )}
@@ -1051,8 +1057,8 @@ function DashboardContent() {
                               <div className="flex items-center justify-between">
                                 <Label htmlFor={`release-${node.id}`} className="text-sm text-muted-foreground flex items-center gap-2 cursor-pointer">
                                   {localState.isReleased
-                                    ? <Unlock className="h-3.5 w-3.5 text-emerald-400" />
-                                    : <Lock className="h-3.5 w-3.5 text-rose-400" />
+                                    ? <Unlock className="h-3.5 w-3.5 text-emerald-400 light:text-emerald-700" />
+                                    : <Lock className="h-3.5 w-3.5 text-rose-400 light:text-rose-700" />
                                   }
                                   {localState.isReleased ? "Liberado" : "Bloqueado"}
                                 </Label>
@@ -1092,7 +1098,7 @@ function DashboardContent() {
                                         type="button"
                                         variant="ghost"
                                         size="sm"
-                                        className="h-8 px-2 text-rose-400 hover:text-rose-300 text-[10px] shrink-0"
+                                        className="h-8 px-2 text-rose-400 light:text-rose-700 hover:text-rose-300 light:hover:text-rose-800 text-[10px] shrink-0"
                                         onClick={() =>
                                           setNodeReleaseState(prev => ({
                                             ...prev,
@@ -1105,7 +1111,7 @@ function DashboardContent() {
                                     )}
                                   </div>
                                   {node.released_at && (
-                                    <p className="text-[10px] text-amber-400/80 flex items-center gap-1">
+                                    <p className="text-[10px] text-amber-400/80 light:text-amber-700/80 flex items-center gap-1">
                                       <Clock className="h-3 w-3" />
                                       Agendado: {new Date(node.released_at).toLocaleString("pt-BR")}
                                     </p>
@@ -1129,7 +1135,7 @@ function DashboardContent() {
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="text-rose-400 hover:text-rose-300 h-9 w-9 p-0"
+                                  className="text-rose-400 light:text-rose-700 hover:text-rose-300 light:hover:text-rose-800 h-9 w-9 p-0"
                                   onClick={() => handleDeleteNode(node.id)}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />

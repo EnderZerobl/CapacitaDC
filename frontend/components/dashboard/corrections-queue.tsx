@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { useSubmissionQueue } from "@/features/activities/hooks"
 import type { Activity } from "@/features/activities/types"
 import { CorrectionRow } from "./correction-row"
-import { memberAxisLabels, type MemberAxis } from "@/lib/roles"
+import { groupByEixo, memberAxisLabels, type MemberAxis } from "@/lib/roles"
 
 const selectClass = "h-9 rounded-md border border-border bg-secondary px-3 text-xs text-foreground"
 
@@ -20,6 +20,8 @@ interface CorrectionsQueueProps {
 
 export function CorrectionsQueue({ activities, isOrganizer, managerAxis = null, onGraded }: CorrectionsQueueProps) {
   const { items, filters, setFilters, setPage, pageSize, hasMore, loading, error, refresh, grade, remove } = useSubmissionQueue()
+  // Separa a página atual da fila por eixo; a ordem pendentes-primeiro é mantida dentro de cada grupo.
+  const groups = groupByEixo(items, item => item.activity_eixo)
   const axes = managerAxis
     ? [{ value: "trainee", label: "Trainee" }, { value: managerAxis, label: memberAxisLabels[managerAxis] }]
     : isOrganizer
@@ -70,17 +72,24 @@ export function CorrectionsQueue({ activities, isOrganizer, managerAxis = null, 
         <p className="mt-1 text-xs text-muted-foreground">Quando alguém entregar uma atividade, o envio aparece aqui.</p>
       </div>
     ) : (
-      <div className="space-y-3">
-        {items.map(submission => (
-          <CorrectionRow key={submission.id} submission={submission} showContext
-            onGrade={async (value, feedback) => {
-              await grade(submission.activity_id, submission.id, value, feedback)
-              onGraded?.()
-            }}
-            onDelete={async () => {
-              await remove(submission.activity_id, submission.id)
-              onGraded?.()
-            }} />
+      <div className="space-y-6">
+        {groups.map(({ eixo, label, items: groupItems }) => (
+          <div key={eixo} className="space-y-3">
+            <h3 className="text-sm font-semibold text-foreground border-b border-border pb-2">{label}</h3>
+            <div className="space-y-3">
+              {groupItems.map(submission => (
+                <CorrectionRow key={submission.id} submission={submission} showContext
+                  onGrade={async (value, feedback) => {
+                    await grade(submission.activity_id, submission.id, value, feedback)
+                    onGraded?.()
+                  }}
+                  onDelete={async () => {
+                    await remove(submission.activity_id, submission.id)
+                    onGraded?.()
+                  }} />
+              ))}
+            </div>
+          </div>
         ))}
       </div>
     )}

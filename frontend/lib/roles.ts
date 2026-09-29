@@ -34,6 +34,32 @@ export function axisLabel(value?: string | null): string {
   return axis ? memberAxisLabels[axis] : value || "—"
 }
 
+// Eixos de conteúdo: trainee (PlugInfo), os três eixos de membro e "all" (compartilhado
+// com toda trilha). Nomes iguais aos já usados na aba Trilha e no filtro de Correções.
+const CONTENT_AXIS_ORDER = ["trainee", ...memberAxes, "all"]
+const CONTENT_AXIS_LABELS: Record<string, string> = {
+  trainee: "Trainee (Geral)", ...memberAxisLabels, all: "Todos os eixos",
+}
+
+/**
+ * Separa itens por eixo em seções ordenadas (Trainee, Vendas, Conexões, Experiência,
+ * Todos os eixos), preservando a ordem original dentro de cada seção. Um eixo fora
+ * dessa lista (dado antigo ou desconhecido) aparece por último, com o próprio valor
+ * como rótulo — nunca é descartado silenciosamente.
+ */
+export function groupByEixo<T>(items: T[], eixoOf: (item: T) => string | null | undefined = (item: any) => item.eixo): Array<{ eixo: string; label: string; items: T[] }> {
+  const groups = new Map<string, T[]>()
+  for (const item of items) {
+    const key = eixoOf(item) || "—"
+    const bucket = groups.get(key)
+    if (bucket) bucket.push(item)
+    else groups.set(key, [item])
+  }
+  const ordered = [...CONTENT_AXIS_ORDER.filter(eixo => groups.has(eixo)),
+                   ...[...groups.keys()].filter(eixo => !CONTENT_AXIS_ORDER.includes(eixo))]
+  return ordered.map(eixo => ({ eixo, label: CONTENT_AXIS_LABELS[eixo] || eixo, items: groups.get(eixo)! }))
+}
+
 export function isStaff(type?: string | null): boolean {
   return type === "admin" || type === "organizador" || type === "gerente"
 }

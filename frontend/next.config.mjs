@@ -13,7 +13,8 @@ const nextConfig = {
   allowedDevOrigins: ['127.0.0.1'],
   // Não gerar AGENTS.md e CLAUDE.md dentro do repositório a cada build.
   agentRules: false,
-  // Allow a 20 MB attachment plus multipart headers through the API proxy.
+  // Allow a 20 MB material upload plus multipart headers through the local API
+  // proxy. On Vercel, /api goes straight to the function, which accepts 4.5 MB.
   experimental: { proxyClientMaxBodySize: '25mb' },
   images: {
     unoptimized: true,

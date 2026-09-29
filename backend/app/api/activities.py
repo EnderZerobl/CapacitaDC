@@ -2,11 +2,13 @@
 api/activities.py — Activity & submission endpoints (/api/activities/*)
 """
 
+import re
 import uuid
 from typing import List
 from datetime import datetime, timezone
 from urllib.parse import quote
-from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -32,6 +34,7 @@ router = APIRouter()
 SUBMISSION_BLOB_PREFIX = "submissions"
 MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024
 ATTACHMENT_EXTENSIONS = {"pdf", "doc", "docx", "odt", "xls", "xlsx", "ods", "ppt", "pptx", "odp", "png", "jpg", "jpeg", "gif", "webp", "zip", "txt", "csv"}
+DOWNLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 def _submission_activity(db, activity_id, user, node_id=None):
@@ -47,33 +50,56 @@ def _submission_activity(db, activity_id, user, node_id=None):
     return activity
 
 
-@router.post("/{activity_id}/attachments", response_model=schemas.SubmissionAttachmentOut)
-async def upload_submission_attachment(
-    activity_id: str, file: UploadFile = File(...), node_id: str | None = Form(None),
-    db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user),
-):
-    _submission_activity(db, activity_id, current_user, node_id)
-    name = (file.filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+def _attachment_name(filename: str) -> tuple[str, str]:
+    name = (filename or "").replace("\\", "/").rsplit("/", 1)[-1]
     extension = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if extension not in ATTACHMENT_EXTENSIONS or len(name) > 200:
         raise HTTPException(400, "Formato não permitido. Envie PDF, documentos, planilhas, apresentações, imagens, TXT, CSV ou ZIP.")
-    data = await file.read(MAX_ATTACHMENT_SIZE + 1)
-    if len(data) > MAX_ATTACHMENT_SIZE:
+    return name, extension
+
+
+@router.post("/{activity_id}/attachments/upload-token", response_model=schemas.AttachmentUploadToken)
+def create_attachment_upload_token(
+    activity_id: str, upload: schemas.AttachmentUploadRequest,
+    db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user),
+):
+    """Vercel Functions reject request bodies over 4.5 MB, so the browser sends
+    the file straight to private storage with this token, then registers it."""
+    _submission_activity(db, activity_id, current_user, upload.node_id)
+    _, extension = _attachment_name(upload.name)
+    if upload.size > MAX_ATTACHMENT_SIZE:
         raise HTTPException(413, "O arquivo excede o limite de 20 MB.")
-    if not data:
+    if upload.size <= 0:
+        raise HTTPException(400, "O arquivo está vazio.")
+    pathname = f"{SUBMISSION_BLOB_PREFIX}/{current_user.id}/{uuid.uuid4().hex}.{extension}"
+    return {"pathname": pathname, "token": blob_storage.client_upload_token(pathname, MAX_ATTACHMENT_SIZE)}
+
+
+@router.post("/{activity_id}/attachments", response_model=schemas.SubmissionAttachmentOut)
+def register_submission_attachment(
+    activity_id: str, uploaded: schemas.AttachmentRegister,
+    db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user),
+):
+    _submission_activity(db, activity_id, current_user, uploaded.node_id)
+    name, extension = _attachment_name(uploaded.name)
+    # Only a pathname the upload token route issued to this person, registered once.
+    issued = rf"{SUBMISSION_BLOB_PREFIX}/{re.escape(current_user.id)}/[0-9a-f]{{32}}\.{extension}"
+    if not re.fullmatch(issued, uploaded.pathname) or db.query(models.SubmissionAttachment).filter(
+            models.SubmissionAttachment.storage_key == uploaded.pathname).first():
+        raise HTTPException(400, "Este arquivo não corresponde a um envio seu.")
+    size = blob_storage.size(uploaded.pathname)
+    if size is None:
+        raise HTTPException(400, "O envio do arquivo não foi concluído. Tente novamente.")
+    if not size or size > MAX_ATTACHMENT_SIZE:
+        blob_storage.delete(uploaded.pathname)
+        if size:
+            raise HTTPException(413, "O arquivo excede o limite de 20 MB.")
         raise HTTPException(400, "O arquivo está vazio.")
     attachment = models.SubmissionAttachment(id=str(uuid.uuid4()), activity_id=activity_id,
-        user_id=current_user.id, name=name, size=len(data),
-        storage_key=f"{SUBMISSION_BLOB_PREFIX}/{uuid.uuid4().hex}.{extension}")
-    try:
-        attachment.storage_key = blob_storage.upload(attachment.storage_key, data)
-        db.add(attachment)
-        db.commit()
-        db.refresh(attachment)
-    except Exception:
-        db.rollback()
-        blob_storage.delete(attachment.storage_key)
-        raise
+        user_id=current_user.id, name=name, size=size, storage_key=uploaded.pathname)
+    db.add(attachment)
+    db.commit()
+    db.refresh(attachment)
     return attachment
 
 
@@ -98,7 +124,9 @@ def download_submission_attachment(
     if data is None:
         raise HTTPException(404, "Arquivo não encontrado")
     safe_name = attachment.name.replace('"', "'")
-    return Response(content=data, media_type="application/octet-stream", headers={
+    # Streamed: Vercel refuses buffered function responses over 4.5 MB.
+    chunks = (data[start:start + DOWNLOAD_CHUNK_SIZE] for start in range(0, len(data), DOWNLOAD_CHUNK_SIZE))
+    return StreamingResponse(chunks, media_type="application/octet-stream", headers={
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-store",
         "Content-Disposition": f"attachment; filename=\"{safe_name}\"; filename*=UTF-8''{quote(attachment.name)}",

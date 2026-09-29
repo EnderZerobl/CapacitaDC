@@ -47,7 +47,7 @@ export function GamePreview({ draft }: { draft: GameDraft }) {
   const currentStep = draft.format === "scenario" ? draft.config.steps.find(step => step.id === stepId) : null
 
   return <div className="space-y-5">
-    <p className="rounded-md bg-muted p-3 text-sm">Pré-visualização administrativa. As respostas desta prévia não alteram o progresso ou o ranking.</p>
+    <p className="rounded-md bg-muted p-3 text-sm">Pré-visualização administrativa. As respostas desta prévia não alteram o progresso nem a pontuação.</p>
     {issues.length ? <div className="space-y-2 text-sm"><p className="font-semibold">Complete o rascunho para testar:</p><ul className="list-disc space-y-1 pl-5">{issues.map(issue => <li key={issue}>{issue}</li>)}</ul></div> : <>
       <h3 className="text-xl font-semibold">{draft.title}</h3>
       {draft.instructions && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{draft.instructions}</p>}

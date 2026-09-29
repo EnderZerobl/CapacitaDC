@@ -27,7 +27,7 @@ Somente o administrador nomeia gerentes, troca seu eixo ou os remove do cargo; o
 | Etapas, ordem, liberação e agendamento da trilha | Sim | Sim | Não |
 | Atividades e jogos | Sim | Sim | Não; conteúdo `all` fica visível, como para o organizador, mas não é editável |
 | Consultar e corrigir entregas, baixar anexos | Sim, de membros do eixo em atividades do eixo | Sim, de trainees | Não |
-| Notas, progresso, perfil e ranking | Membros contados só na trilha do eixo | Trainees como o organizador os vê | Não |
+| Notas, progresso e perfil | Membros contados só na trilha do eixo | Trainees como o organizador os vê | Não |
 
 Os vínculos também são conferidos: não é possível ligar material, atividade, jogo ou pré-requisito de outro eixo, nem mover um recurso para fora do escopo do gerente (o eixo dele e o PlugInfo). Um gerente sem eixo válido perde também o acesso ao PlugInfo. Como membros enxergam as trilhas dos três eixos, uma atividade pode ter entregas de membros de outro eixo; nesse caso excluí-la ou mudar seu peso (o que alteraria notas de outras pessoas) fica com o administrador. O mesmo vale para conteúdos antigos compartilhados com a trilha de outro eixo.
 
@@ -81,7 +81,7 @@ Entregas pendentes e atividades com peso zero não reduzem a média. Sem notas c
 
 O backend recalcula quando uma nota é salva, quando um reenvio retira a nota anterior, quando o peso muda e quando uma atividade é excluída. `users.nota_rotacao` é um cache calculado para manter compatibilidade com as respostas da API, e não um campo de lançamento manual. A rotação/ciclo do trainee (`rotacao`) continua sendo um dado administrativo separado.
 
-Pontuação de jogos/ranking e nota de atividades são medidas diferentes. Os pontos dos jogos não entram na média de rotação.
+Pontuação de jogos e nota de atividades são medidas diferentes. Os pontos dos jogos não entram na média de rotação.
 
 ## Trilhas e acesso ao conteúdo
 
@@ -99,7 +99,9 @@ Reordenar muda a sequência implícita. Excluir ou alterar conteúdos já usados
 
 O formulário apresenta **anexos → links → comentários**. Cada entrega aceita até 5 anexos, com até 20 MB por arquivo, até 10 links HTTP/HTTPS e um comentário de até 5.000 caracteres. Os formatos aceitos são PDF, DOC/DOCX/ODT, XLS/XLSX/ODS, PPT/PPTX/ODP, PNG/JPG/JPEG/GIF/WEBP, TXT, CSV e ZIP. Se a atividade exige arquivo, um link não substitui o anexo obrigatório.
 
-Os participantes enviam arquivos por `POST /api/activities/{id}/attachments` e informam seus IDs ao entregar a atividade. A API verifica o autor, a atividade, a liberação da etapa e os limites. Os anexos ficam num Vercel Blob privado (não em disco local, incompatível com o compute stateless da Vercel), e são baixados por uma rota autenticada pelo autor ou pelos gestores autorizados após a entrega. Eles aparecem na entrega, na fila de correções e no perfil. Alterar anexos, links ou comentário invalida a correção anterior, como já ocorria ao alterar a resposta.
+Os anexos ficam num Vercel Blob privado (não em disco local, incompatível com o compute stateless da Vercel). Como as funções da Vercel recusam corpos acima de 4,5 MB (erro 413 `FUNCTION_PAYLOAD_TOO_LARGE`), o arquivo não passa pela API: o navegador pede um token em `POST /api/activities/{id}/attachments/upload-token`, emitido só depois de a API verificar o autor, a atividade, a liberação da etapa, o formato e o tamanho informado, e envia o arquivo direto ao Blob. O token vale por 10 minutos, para um único caminho, sem sobrescrever arquivos e até 20 MB. Em seguida, `POST /api/activities/{id}/attachments` confere de novo a atividade e a etapa, se o caminho foi emitido para a pessoa e o tamanho real do arquivo guardado, e registra o anexo, cujo ID é informado ao entregar a atividade. O token é assinado com `BLOB_READ_WRITE_TOKEN`, que precisa estar configurado na API.
+
+Os anexos são baixados por uma rota autenticada pelo autor ou pelos gestores autorizados após a entrega; a resposta é enviada em partes (streaming), porque respostas comuns das funções também são limitadas a 4,5 MB. Eles aparecem na entrega, na fila de correções e no perfil. Alterar anexos, links ou comentário invalida a correção anterior, como já ocorria ao alterar a resposta.
 
 A migração 5 adiciona a lista de links e a tabela de anexos, preservando links e notas das entregas antigas. A pasta privada de anexos também precisa de armazenamento persistente e backup.
 
@@ -123,7 +125,9 @@ Fluxo de autoria: **criar → salvar rascunho → pré-visualizar → publicar �
 
 Publicações são versões imutáveis. Editar um rascunho e publicar outra versão não substitui silenciosamente a versão de etapas existentes. É possível duplicar um jogo para adaptar seu conteúdo. O eixo de um jogo já publicado é preservado; use uma cópia para outro público.
 
-O servidor recebe respostas/decisões e calcula o resultado. Não aceita uma pontuação arbitrária calculada no navegador nem entrega o gabarito antes da avaliação. Os formatos da biblioteca são normalizados para até 100 pontos por etapa; vale o melhor resultado e só a melhora acrescenta pontos ao ranking. Repetir uma requisição de conclusão não pontua novamente.
+Um rascunho nunca publicado exclui livremente. Um jogo publicado também pode ser excluído, desde que nenhuma versão sua (a atual ou uma anterior) ainda esteja em uso em alguma etapa da trilha; do contrário a etapa perderia o conteúdo. Remova o jogo da etapa (ou a própria etapa) antes de excluir o jogo; a exclusão apaga todas as versões e não pode ser desfeita.
+
+O servidor recebe respostas/decisões e calcula o resultado. Não aceita uma pontuação arbitrária calculada no navegador nem entrega o gabarito antes da avaliação. Os formatos da biblioteca são normalizados para até 100 pontos por etapa; vale o melhor resultado e só a melhora acrescenta pontos à pessoa. Repetir uma requisição de conclusão não pontua novamente.
 
 Cenários salvam as decisões no servidor. Os demais formatos mantêm as escolhas em andamento no navegador para retomada da tentativa; a avaliação é enviada ao concluir. Essa retomada local depende do mesmo navegador. Quizzes antigos continuam funcionando pelo fluxo legado de respostas avaliadas no servidor, com os pesos originais.
 
@@ -137,7 +141,7 @@ Cenários salvam as decisões no servidor. Os demais formatos mantêm as escolha
 | Priorização com acerto parcial | Evoluir a ordenação para comparar prioridades, sem exigir uma única sequência rígida. |
 | Jogo da memória | Outra interface para associação de conceitos. |
 | Simulação de tempo e orçamento | Distribuir recursos e analisar consequências de decisões comerciais. Exige novo motor de avaliação. |
-| Flashcards | Revisão e autoavaliação, em modo de prática separado do ranking avaliado. |
+| Flashcards | Revisão e autoavaliação, em modo de prática separado da pontuação avaliada. |
 | Grau de confiança | Combinar respostas com a confiança declarada para identificar lacunas de conhecimento. |
 | Imagem interativa | Identificar regiões ou elementos em diagramas/imagens; exige editor de regiões. |
 
@@ -163,13 +167,13 @@ Rotas principais (consulte `/docs` na API para o contrato completo):
 | Recurso | Rotas |
 | --- | --- |
 | Sessão | `POST /api/auth/login`, `POST /api/auth/register`, `GET /api/auth/me` |
-| Pessoas | `GET/POST /api/users`, `PUT/DELETE /api/users/{id}`, `GET /api/users/{id}/profile` |
+| Pessoas | `GET/POST /api/users`, `PUT/DELETE /api/users/{id}`, `GET /api/users/{id}/profile` (somente gestão: participantes não listam pessoas) |
 | Materiais | `GET/POST /api/materials`, `PUT/DELETE /api/materials/{id}` |
 | Atividades | `GET/POST /api/activities`, `PATCH/DELETE /api/activities/{id}` |
 | Entregas | `POST /api/activities/{id}/submit`, `GET /api/activities/{id}/submissions` |
 | Correção | `PATCH /api/activities/{id}/submissions/{submission_id}` |
 | Fila | `GET /api/submissions`, com filtros de situação, pessoa, tipo, eixo, atividade e paginação |
-| Notas e ranking | `GET /api/grades`, `GET /api/leaderboard` |
+| Notas | `GET /api/grades` |
 | Trilhas | `GET/POST /api/nodes`, liberação, ordenação, conclusão e exclusão por ID |
 | Conteúdo da etapa | `GET /api/nodes/{id}/content`, `PATCH /api/nodes/{id}/activity` |
 | Jogos | `GET/POST /api/games`, edição, duplicação, publicação e versões por ID |

@@ -4,7 +4,6 @@ import { apiClient } from "@/lib/api-client"
 import type {
   Member,
   Trainee,
-  LeaderboardEntry,
   GradeRow,
   UserCreatePayload,
   UserUpdatePayload,
@@ -70,9 +69,6 @@ export const usersApi = {
 
   updateTrainee: (traineeId: string, payload: TraineeUpdatePayload) =>
     apiClient.put<RawUser>(`/api/users/trainees/${traineeId}`, payload),
-
-  getLeaderboard: () =>
-    apiClient.get<LeaderboardEntry[]>("/api/leaderboard"),
 
   getGrades: () => apiClient.get<GradeRow[]>("/api/grades"),
 }

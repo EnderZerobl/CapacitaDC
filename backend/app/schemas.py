@@ -214,18 +214,6 @@ class GameSubmitRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     answers: List[GameAnswer] = Field(min_length=1)
 
-class LeaderboardEntry(BaseModel):
-    id: str
-    name: str
-    email: str
-    cargo: str
-    type: str
-    eixo: Optional[str] = None
-    pontos_acumulados: int = 0
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 # --- Activity & Submission Schemas ---
 
 class ActivityCreate(BaseModel):
@@ -252,6 +240,23 @@ class SubmissionAttachmentOut(BaseModel):
     size: int
     url: str
     model_config = ConfigDict(from_attributes=True)
+
+
+class AttachmentUploadRequest(BaseModel):
+    name: str
+    size: int
+    node_id: Optional[str] = None
+
+
+class AttachmentUploadToken(BaseModel):
+    pathname: str
+    token: str
+
+
+class AttachmentRegister(BaseModel):
+    pathname: str
+    name: str
+    node_id: Optional[str] = None
 
 
 class ActivitySubmissionOut(BaseModel):

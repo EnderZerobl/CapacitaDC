@@ -14,7 +14,7 @@ npm run build
 
 As suítes cobrem autenticação, permissões, criação e contratos das rotas, conteúdo bloqueado, conclusão das etapas, avaliação dos cinco formatos de jogos, tentativas repetidas, publicações, migrações, média ponderada e fila de correção.
 
-`test_managers.py` cobre o gerente por eixo com dados descartáveis para os três eixos: nomeação pelo administrador e eixo obrigatório; gestão do PlugInfo (trainees, rotação, conteúdo e correções do eixo `trainee`) sem promoção de trainees; cada gerente contra os outros dois eixos, por listagem e por ID; requisições manipuladas (promoção, troca de eixo ou cargo, edição de outros gerentes); conteúdo `all`/`trainee` e vínculos cruzados; vínculos antigos compartilhados; correções que exigem membro e atividade do eixo; notas, perfil e ranking contados só no eixo; nomes de eixo antigos equivalentes aos códigos e eixo desconhecido sem acesso; mudança de papel valendo para a sessão aberta; biblioteca com três etapas alcançadas de dez, agendamento, pré-requisito pendente, múltiplos vínculos e trilha não autorizada; e download de documentos por URL direta.
+`test_managers.py` cobre o gerente por eixo com dados descartáveis para os três eixos: nomeação pelo administrador e eixo obrigatório; gestão do PlugInfo (trainees, rotação, conteúdo e correções do eixo `trainee`) sem promoção de trainees; cada gerente contra os outros dois eixos, por listagem e por ID; requisições manipuladas (promoção, troca de eixo ou cargo, edição de outros gerentes); conteúdo `all`/`trainee` e vínculos cruzados; vínculos antigos compartilhados; correções que exigem membro e atividade do eixo; notas e perfil contados só no eixo; participantes sem acesso à lista de pessoas; nomes de eixo antigos equivalentes aos códigos e eixo desconhecido sem acesso; mudança de papel valendo para a sessão aberta; biblioteca com três etapas alcançadas de dez, agendamento, pré-requisito pendente, múltiplos vínculos e trilha não autorizada; e download de documentos por URL direta.
 
 ## Preparar testes no navegador
 
@@ -75,7 +75,7 @@ BASE_URL=http://127.0.0.1:3017 ADMIN_EMAIL=admin@example.com \
   node frontend/tests/games_journey.cjs
 ```
 
-Percorre autoria, pré-visualização, publicação, vínculo com a trilha, liberação, jogo e atualização do progresso.
+Percorre autoria, pré-visualização, publicação, vínculo com a trilha, liberação, jogo e atualização do progresso. Também confere a exclusão do jogo: recusada com a mensagem do servidor enquanto duas etapas o usam, liberada depois de removê-las (mesmo já havendo uma tentativa concluída).
 
 ## Entregas com anexos
 
@@ -85,7 +85,7 @@ Com uma API descartável nova e o frontend conectado a ela:
 BASE_URL=http://127.0.0.1:3017 node frontend/tests/submission_attachments_journey.cjs
 ```
 
-Verifica PDF e CSV via multipart, limites de quantidade/tamanho/formato, campos de links e comentários, preservação após falha, conclusão da etapa, reenvio que invalida a nota, download autenticado e exibição na correção. A suíte `test_submission_attachments.py` cobre também propriedade dos anexos, atividade bloqueada/fechada e migração de entregas antigas.
+Verifica PDF e CSV enviados direto ao armazenamento, limites de quantidade/tamanho/formato (inclusive a recusa do token acima de 20 MB), campos de links e comentários, preservação após falha, conclusão da etapa, reenvio que invalida a nota, download autenticado e exibição na correção. O navegador enviaria os anexos ao Vercel Blob; a jornada redireciona essas requisições para a API descartável, que guarda os arquivos em memória. Por isso, num navegador comum conectado ao servidor descartável, o envio de anexos falha: o token de teste não vale no Blob real. A suíte `test_submission_attachments.py` cobre também propriedade dos anexos, token emitido para outra pessoa ou nunca usado, arquivos fora dos limites, atividade bloqueada/fechada, formato do token do Blob, download em partes e migração de entregas antigas.
 
 ## Gerente por eixo
 

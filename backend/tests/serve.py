@@ -4,6 +4,8 @@ Usage: backend/.venv/bin/python backend/tests/serve.py --port 8021
 Never reads or changes the configured application database.
 """
 import argparse
+import base64
+import json
 import os
 from pathlib import Path
 import sys
@@ -24,6 +26,7 @@ def main():
         from app import models
         from app.auth import get_password_hash
         from app.services import blob_storage
+        from fastapi import HTTPException, Request
         import uvicorn
 
         # No real Vercel Blob store for disposable browser tests: an in-memory
@@ -37,6 +40,21 @@ def main():
         blob_storage.upload = fake_upload
         blob_storage.download = store.get
         blob_storage.delete = lambda pathname: store.pop(pathname, None)
+        blob_storage.size = lambda pathname: len(store[pathname]) if pathname in store else None
+        # Attachments go from the browser straight to the Blob API. The journeys
+        # redirect those requests here, so tokens are signed for a disposable store.
+        os.environ['BLOB_READ_WRITE_TOKEN'] = 'vercel_blob_rw_disposable_browser-tests-only'
+
+        @app.put('/api/fake-blob')
+        async def fake_blob_put(request: Request, pathname: str):
+            client_token = request.headers.get('authorization', '').removeprefix('Bearer vercel_blob_client_disposable_')
+            signed = json.loads(base64.b64decode(base64.b64decode(client_token).decode().split('.', 1)[1]))
+            if signed['pathname'] != pathname:
+                raise HTTPException(403, 'The client token was issued for another pathname.')
+            store[pathname] = await request.body()
+            url = f'https://disposable.private.blob.vercel-storage.com/{pathname}'
+            return {'url': url, 'downloadUrl': f'{url}?download=1', 'pathname': pathname,
+                    'contentType': 'application/octet-stream', 'contentDisposition': 'attachment'}
         # Um gerente e um membro por eixo, para as jornadas de isolamento entre eixos.
         accounts = [(role, role, 'vendas' if role == 'membro' else None)
                     for role in ['admin', 'organizador', 'membro', 'trainee']]

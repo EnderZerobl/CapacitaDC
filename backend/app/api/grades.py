@@ -1,5 +1,5 @@
 """
-api/grades.py — Grades, leaderboard and file upload endpoints.
+api/grades.py — Grades, corrections queue and file upload endpoints.
 """
 
 import mimetypes
@@ -79,27 +79,6 @@ def download_uploaded_file(
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-store",
     })
-
-
-# ── Leaderboard ───────────────────────────────────────────────────────────────
-
-@router.get("/leaderboard", response_model=List[schemas.LeaderboardEntry])
-def get_leaderboard(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    if current_user.type == "gerente":
-        # Membros pontuam só no eixo do gerente; trainees, como o organizador os vê.
-        entries = [
-            schemas.LeaderboardEntry.model_validate(user).model_copy(update={
-                "pontos_acumulados": axis_metrics(db, user.id, access.followed_eixos(current_user, user))["pontos_acumulados"],
-            }) if user.type == "membro" else schemas.LeaderboardEntry.model_validate(user)
-            for user in access.managed_users(db, current_user)
-        ]
-        return sorted(entries, key=lambda entry: entry.pontos_acumulados, reverse=True)
-    return db.query(models.User).filter(
-        models.User.type.in_(["trainee", "membro"])
-    ).order_by(models.User.pontos_acumulados.desc()).all()
 
 
 # ── Grades spreadsheet ────────────────────────────────────────────────────────

@@ -20,16 +20,6 @@ export interface Trainee {
   pontos_acumulados?: number
 }
 
-export interface LeaderboardEntry {
-  id: string
-  name: string
-  email: string
-  cargo: string
-  type: string
-  eixo?: string
-  pontos_acumulados: number
-}
-
 export interface GradeRow {
   id: string
   name: string
