@@ -44,8 +44,8 @@ export function TraineeCard({ id, name, photo, notaRotacao, rotacao, showGrade =
                   variant="outline"
                   className={`text-[9px] shrink-0 ${
                     rotacao === 1
-                      ? "border-sky-500/30 text-sky-400"
-                      : "border-violet-500/30 text-violet-400"
+                      ? "border-sky-500/30 text-sky-400 light:text-sky-700"
+                      : "border-violet-500/30 text-violet-400 light:text-violet-700"
                   }`}
                 >
                   R{rotacao}
@@ -58,16 +58,16 @@ export function TraineeCard({ id, name, photo, notaRotacao, rotacao, showGrade =
               <div className="mt-2">
                 {notaRotacao !== undefined ? (
                   <div className="flex items-center gap-2">
-                    <Star className="h-3.5 w-3.5 text-amber-400" />
+                    <Star className="h-3.5 w-3.5 text-amber-400 light:text-amber-700" />
                     <span className="text-xs text-muted-foreground">Nota:</span>
                     <Badge
                       variant="outline"
                       className={`text-xs ${
                         notaRotacao >= 8
-                          ? "border-emerald-500/30 text-emerald-400"
+                          ? "border-emerald-500/30 text-emerald-400 light:text-emerald-700"
                           : notaRotacao >= 6
-                          ? "border-amber-500/30 text-amber-400"
-                          : "border-rose-500/30 text-rose-400"
+                          ? "border-amber-500/30 text-amber-400 light:text-amber-700"
+                          : "border-rose-500/30 text-rose-400 light:text-rose-700"
                       }`}
                     >
                       {notaRotacao.toFixed(2)}

@@ -1,8 +1,9 @@
 // Precisa de um banco descartável e vazio: a trilha é sequencial, então etapas
 // deixadas por execuções anteriores bloqueiam as criadas agora.
 // Browser journey over the real API: an admin authors and publishes a game, links it
-// to the trail, and a trainee plays it. Run with both servers up and a disposable
-// database, after seeding the two accounts:
+// to the trail, and a trainee plays it; then the admin confirms deletion is refused
+// while a step still uses it and succeeds once every step is removed. Run with both
+// servers up and a disposable database, after seeding the two accounts:
 //
 //   BASE_URL=http://127.0.0.1:3017 ADMIN_EMAIL=... TRAINEE_EMAIL=... PASSWORD=... \
 //     node frontend/tests/games_journey.cjs
@@ -146,6 +147,38 @@ async function playAsTrainee(page) {
   console.log("PASS trilha: a etapa seguinte abre depois de concluir a anterior")
 }
 
+/** O jogo publicado está em duas etapas da trilha; a exclusão deve recusar e explicar o motivo. */
+async function refuseDeleteWhileLinked(page) {
+  await page.goto(`${baseURL}/jogos`)
+  const card = page.locator("article", { hasText: title })
+  page.once("dialog", dialog => dialog.accept())
+  await card.getByRole("button", { name: "Excluir", exact: true }).click()
+  await page.getByRole("alert").getByText(/em uso na trilha \(2 etapas\)/).waitFor()
+  await card.waitFor()
+  console.log("PASS exclusão: jogo vinculado a 2 etapas recusa a exclusão com a mensagem do servidor")
+}
+
+/** Removidas as duas etapas, o jogo se torna excluível e some da biblioteca. */
+async function unlinkAndDeleteGame(page) {
+  const unlinked = await page.evaluate(async ({ first: firstName, second: secondName }) => {
+    const headers = { Authorization: `Bearer ${localStorage.getItem("token")}` }
+    const nodes = await (await fetch("/api/nodes", { headers })).json()
+    for (const name of [firstName, secondName]) {
+      const node = nodes.find(item => item.name === name)
+      const response = await fetch(`/api/nodes/${node.id}`, { method: "DELETE", headers })
+      if (!response.ok) return false
+    }
+    return true
+  }, { first: nodeName, second: nextNodeName })
+  assert.ok(unlinked, "as duas etapas deveriam ser removidas da trilha")
+  await page.goto(`${baseURL}/jogos`)
+  const card = page.locator("article", { hasText: title })
+  page.once("dialog", dialog => dialog.accept())
+  await card.getByRole("button", { name: "Excluir", exact: true }).click()
+  await card.waitFor({ state: "hidden" })
+  console.log("PASS exclusão: destravado das etapas, o jogo é excluído e some da biblioteca")
+}
+
 async function confirmProgress(page) {
   const nodes = await page.evaluate(async () => {
     const response = await fetch("/api/nodes", { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } })
@@ -170,6 +203,7 @@ async function main() {
     await previewBeforeLeaving(page)
     await linkToTrail(page)
     await addSecondStep(page)
+    await refuseDeleteWhileLinked(page)
     await context.close()
 
     const playing = await browser.newContext()
@@ -179,7 +213,16 @@ async function main() {
     await playAsTrainee(playerPage)
     await confirmProgress(playerPage)
     await playing.close()
-    console.log("Jornada completa: autoria, publicação, vínculo com a trilha e jogada verificados no navegador.")
+
+    // A pessoa jogou e concluiu de verdade: prova que excluir a etapa também
+    // limpa a tentativa registrada, liberando o jogo para ser excluído.
+    const cleanup = await browser.newContext()
+    const cleanupPage = await cleanup.newPage()
+    cleanupPage.setDefaultTimeout(20000)
+    await signIn(cleanupPage, adminEmail)
+    await unlinkAndDeleteGame(cleanupPage)
+    await cleanup.close()
+    console.log("Jornada completa: autoria, publicação, vínculo com a trilha, jogada e exclusão verificados no navegador.")
   } finally {
     await browser.close()
   }

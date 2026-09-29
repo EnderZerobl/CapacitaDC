@@ -99,6 +99,34 @@ class GameTests(unittest.TestCase):
         status, _ = self.request("DELETE", f"/api/games/{draft['id']}")
         self.assertEqual(status, 200)
 
+    def test_published_game_deletes_once_detached_from_every_trail_step(self):
+        unused = self.game()
+        status, _ = self.request("DELETE", f"/api/games/{unused['id']}")
+        self.assertEqual(status, 200)  # published, but never placed in the trail
+
+        game = self.game()
+        first_node = self.node(game)
+        self.begin(first_node)  # a live attempt against this same revision
+        status, body = self.request("DELETE", f"/api/games/{game['id']}")
+        self.assertEqual(status, 409, body)
+        self.assertIn("1 etapa", body["detail"])
+
+        second_node = self.node(game)  # a second step reusing the same published revision
+        status, body = self.request("DELETE", f"/api/games/{game['id']}")
+        self.assertEqual(status, 409, body)
+        self.assertIn("2 etapas", body["detail"])
+
+        self.assertEqual(self.request("DELETE", f"/api/nodes/{first_node['id']}")[0], 200)
+        status, body = self.request("DELETE", f"/api/games/{game['id']}")
+        self.assertEqual(status, 409, body)  # second_node still holds the revision
+
+        self.assertEqual(self.request("DELETE", f"/api/nodes/{second_node['id']}")[0], 200)
+        status, _ = self.request("DELETE", f"/api/games/{game['id']}")
+        self.assertEqual(status, 200)  # freed once every step referencing it is gone
+        with self.api.sessions() as db:
+            self.assertIsNone(db.get(models.Game, game["id"]))
+            self.assertEqual(db.query(models.GameRevision).filter_by(game_id=game["id"]).count(), 0)
+
     def test_publication_validates_quiz_answers_and_graph_integrity(self):
         configs = []
         quiz = self.quiz_config()

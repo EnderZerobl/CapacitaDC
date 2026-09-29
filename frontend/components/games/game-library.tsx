@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Copy, Eye, Gamepad2, Layers, ListChecks, ListOrdered, Loader2, Pencil, Route, Shuffle } from "lucide-react"
+import { Copy, Eye, Gamepad2, Layers, ListChecks, ListOrdered, Loader2, Pencil, Route, Shuffle, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -56,6 +56,15 @@ export function GameLibrary({ isOrganizer, managerAxis = null }: { isOrganizer: 
       setEditing({ key: copy.id, game: copy, format: copy.format })
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível duplicar o jogo.") } finally { setBusy(false) }
   }
+  const remove = async (game: Game) => {
+    if (!confirm(`Excluir "${game.title || "Jogo sem título"}"? Esta ação não pode ser desfeita.`)) return
+    setBusy(true)
+    setError("")
+    try {
+      await gamesApi.remove(game.id)
+      setGames(previous => previous.filter(item => item.id !== game.id))
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível excluir o jogo.") } finally { setBusy(false) }
+  }
   if (editing) return <GameEditor key={editing.key} game={editing.game} format={editing.format} axes={axes} onChanged={changed} onClose={() => setEditing(null)} />
 
   const filtered = games.filter(game => `${game.title} ${gameFormatLabels[game.format]} ${game.eixo}`.toLocaleLowerCase("pt-BR").includes(query.toLocaleLowerCase("pt-BR")))
@@ -78,6 +87,8 @@ export function GameLibrary({ isOrganizer, managerAxis = null }: { isOrganizer: 
         <Button size="sm" disabled={busy} onClick={() => setEditing({ key: game.id, game, format: game.format })}><Pencil className="size-4" />Editar</Button>
         <Button size="sm" variant="outline" disabled={busy} onClick={() => setPreview(game)}><Eye className="size-4" />Prévia</Button>
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void duplicate(game)}><Copy className="size-4" />Duplicar</Button>
+        <Button size="sm" variant="ghost" className="text-rose-400 light:text-rose-700 hover:text-rose-300 light:hover:text-rose-800 hover:bg-rose-500/10"
+          disabled={busy} onClick={() => void remove(game)}><Trash2 className="size-4" />Excluir</Button>
       </div>
     </article>)}</div>}
     <p className="text-sm text-muted-foreground">Depois de publicar, selecione o jogo ao adicionar uma etapa à trilha. O mesmo jogo pode ser reutilizado em várias etapas do seu eixo.</p>

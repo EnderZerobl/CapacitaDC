@@ -23,13 +23,12 @@ async function main() {
   const node = await api(admin.access_token, 'POST', '/api/nodes', {
     type: 'activity', eixo: 'trainee', activity_id: activity.id, is_released: true,
   })
-  // Exercise the real proxy boundary, not just the browser's file-size check.
+  // Files never pass through the API (Vercel refuses bodies over 4.5 MB), but it
+  // still refuses to issue an upload token past the limit, not just the browser.
   for (const [size, expected] of [[20 * 1024 * 1024, 200], [20 * 1024 * 1024 + 1, 413]]) {
-    const form = new FormData()
-    form.append('file', new Blob([Buffer.alloc(size)], { type: 'application/pdf' }), 'limite.pdf')
-    form.append('node_id', node.id)
-    const response = await fetch(`${baseURL}/api/activities/${activity.id}/attachments`, {
-      method: 'POST', headers: { Authorization: `Bearer ${trainee.access_token}` }, body: form,
+    const response = await fetch(`${baseURL}/api/activities/${activity.id}/attachments/upload-token`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${trainee.access_token}` },
+      body: JSON.stringify({ name: 'limite.pdf', size, node_id: node.id }),
     })
     assert.equal(response.status, expected, await response.text())
   }
@@ -40,6 +39,16 @@ async function main() {
       localStorage.setItem('token', session.access_token)
       localStorage.setItem('currentUser', JSON.stringify(session.user))
     }, trainee)
+    // The browser uploads straight to Vercel Blob; the disposable API stands in for it.
+    let directUploads = 0
+    await context.route('https://vercel.com/api/blob/**', async route => {
+      const response = await route.fetch({ url: `${baseURL}/api/fake-blob${new URL(route.request().url()).search}` })
+      if (route.request().method() === 'PUT' && response.ok()) directUploads += 1
+      await route.fulfill({
+        status: response.status(), contentType: 'application/json', body: await response.text(),
+        headers: { 'access-control-allow-origin': '*' },
+      })
+    })
     const page = await context.newPage()
     page.setDefaultTimeout(15000)
     await page.goto(`${baseURL}/trainees`)
@@ -77,6 +86,7 @@ async function main() {
     await dialog.waitFor({ state: 'hidden' })
     let [submission] = await api(admin.access_token, 'GET', `/api/activities/${activity.id}/submissions`)
     assert.equal(submission.attachments.length, 2)
+    assert.equal(directUploads, 2)
     assert.equal(submission.links.length, 2)
     const attachment = submission.attachments.find(file => file.name === 'trabalho.pdf')
     for (const session of [admin, trainee]) {
@@ -91,8 +101,12 @@ async function main() {
     await api(admin.access_token, 'PATCH', `/api/activities/${activity.id}/submissions/${submission.id}`, { grade: 8, feedback: 'Revisado' })
     await page.getByRole('tab', { name: 'Atividades', exact: true }).click()
     await page.getByLabel('Comentários (opcional)', { exact: true }).fill('Envio atualizado com os mesmos anexos.')
+    const resubmitted = page.waitForResponse(response =>
+      response.url().endsWith(`/api/activities/${activity.id}/submit`) && response.request().method() === 'POST')
     await page.getByRole('button', { name: 'Atualizar envio', exact: true }).click()
-    await page.getByText('Envio atualizado com os mesmos anexos.', { exact: true }).waitFor()
+    assert.equal((await resubmitted).status(), 200)
+    // The textarea already holds the typed text; wait for the saved delivery instead.
+    await page.locator('p', { hasText: 'Envio atualizado com os mesmos anexos.' }).waitFor()
     ;[submission] = await api(admin.access_token, 'GET', `/api/activities/${activity.id}/submissions`)
     assert.equal(submission.grade, null)
     assert.equal(submission.attachments.length, 2)
@@ -106,7 +120,7 @@ async function main() {
     await review.getByRole('tab', { name: /Correções/ }).click()
     await review.getByRole('button', { name: /trabalho.pdf/ }).waitFor()
     await review.getByRole('link', { name: 'https://example.com/referencia', exact: true }).waitFor()
-    console.log('PASS anexos reais: PDF/CSV, limites, links/comentários, recuperação de falha, download restrito, conclusão, reenvio e correção.')
+    console.log('PASS anexos reais: PDF/CSV enviados direto ao armazenamento, limites, links/comentários, recuperação de falha, download restrito, conclusão, reenvio e correção.')
   } finally { await browser.close() }
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { openAuthenticatedFile } from "@/lib/api-client"
 import { LinkedText, safeHref } from "@/components/content/linked-text"
 import { isStaff } from "@/lib/roles"
@@ -19,7 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
-  Compass, LogOut, User, Trophy, GraduationCap, FileText, Video,
+  Compass, LogOut, User, GraduationCap, FileText, Video,
   ExternalLink, Award, ClipboardList, Upload, Clock, CheckCircle2,
   XCircle, Link2, BookOpen, Search,
 } from "lucide-react"
@@ -32,10 +33,6 @@ import type { GameAnswer, GameResult } from "@/features/nodes/types"
 import { useActivities } from "@/features/activities/hooks"
 import { useMaterials } from "@/features/materials/hooks"
 
-interface LeaderboardEntry {
-  id: string; name: string; email: string; cargo: string; type: string; eixo?: string; pontos_acumulados: number
-}
-
 export default function TraineesPage() {
   const router = useRouter()
   const { user, logout, isLoading, refreshUser } = useAuth()
@@ -45,7 +42,6 @@ export default function TraineesPage() {
   const { nodes, completeNode, submitGame, refresh: refreshNodes } = useNodes()
   const { activities, refresh: refreshActivities } = useActivities()
 
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [activeTab, setActiveTab] = useState("trilha")
   const [selectedNode, setSelectedNode] = useState<any | null>(null)
   const [isPlayingGame, setIsPlayingGame] = useState(false)
@@ -55,27 +51,17 @@ export default function TraineesPage() {
   )
   const [searchQuery, setSearchQuery] = useState("")
 
-  const fetchLeaderboard = async () => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-    try {
-      const res = await fetch("/api/leaderboard", { headers: { "Authorization": `Bearer ${token}` } })
-      if (res.ok) setLeaderboard(await res.json())
-    } catch (e) { console.error(e) }
-  }
-
   useEffect(() => {
     if (!isLoading) {
       if (!user) router.push("/login")
       else if (isStaff(user.type)) router.push("/")
       else if (user.type === "membro") router.push("/membros")
-      else fetchLeaderboard()
     }
   }, [user, isLoading, router])
 
   const refreshProgress = async () => {
     // The submission is already saved; a refresh failure must not be reported as a failed submission.
-    const results = await Promise.allSettled([refreshUser(), fetchLeaderboard(), refreshNodes(), refreshMaterials(), refreshActivities()])
+    const results = await Promise.allSettled([refreshUser(), refreshNodes(), refreshMaterials(), refreshActivities()])
     results.forEach(result => {
       if (result.status === "rejected") console.error("Erro ao atualizar progresso:", result.reason)
     })
@@ -140,7 +126,7 @@ export default function TraineesPage() {
                 <div className="flex items-center gap-3 text-sm text-muted-foreground">
                   <User className="h-4 w-4" />
                   <span className="hidden sm:inline font-medium">{user.name}</span>
-                  <Badge variant="outline" className="text-amber-400 border-amber-400/30">
+                  <Badge variant="outline" className="text-amber-400 light:text-amber-700 border-amber-400/30">
                     Trainee
                   </Badge>
                   <Badge variant="outline" className="text-xs font-semibold">
@@ -148,6 +134,7 @@ export default function TraineesPage() {
                   </Badge>
                 </div>
               )}
+              <ThemeToggle />
               <Button
                 variant="ghost"
                 size="sm"
@@ -169,7 +156,7 @@ export default function TraineesPage() {
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="flex items-start gap-4">
               <div className="h-12 w-12 rounded-full bg-amber-500/10 flex items-center justify-center border border-amber-500/20">
-                <GraduationCap className="h-6 w-6 text-amber-500" />
+                <GraduationCap className="h-6 w-6 text-amber-500 light:text-amber-600" />
               </div>
               <div>
                 <h2 className="text-lg font-bold text-foreground mb-0.5">
@@ -263,11 +250,11 @@ export default function TraineesPage() {
                           </div>
                           <div className="flex flex-col gap-1.5 items-end shrink-0">
                             {isOpen ? (
-                              <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[10px]">
+                              <Badge className="bg-emerald-500/10 text-emerald-400 light:text-emerald-700 border-emerald-500/30 text-[10px]">
                                 <CheckCircle2 className="h-3 w-3 mr-1" />Aberta
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-rose-400 border-rose-500/30 text-[10px]">
+                              <Badge variant="outline" className="text-rose-400 light:text-rose-700 border-rose-500/30 text-[10px]">
                                 <XCircle className="h-3 w-3 mr-1" />Encerrada
                               </Badge>
                             )}
@@ -279,7 +266,7 @@ export default function TraineesPage() {
                           </div>
                         </div>
                         {activity.deadline && (
-                          <p className="text-[10px] text-amber-400 flex items-center gap-1 mt-1">
+                          <p className="text-[10px] text-amber-400 light:text-amber-700 flex items-center gap-1 mt-1">
                             <Clock className="h-3 w-3" />
                             Prazo: {new Date(activity.deadline).toLocaleString("pt-BR")}
                           </p>
@@ -289,11 +276,11 @@ export default function TraineesPage() {
                       <CardContent className="space-y-3">
                         {submitted && activity.my_submission && (
                           <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/20 p-3 space-y-1">
-                            <p className="text-xs font-semibold text-emerald-400">✓ Enviado</p>
+                            <p className="text-xs font-semibold text-emerald-400 light:text-emerald-700">✓ Enviado</p>
                             <SubmissionContent submission={activity.my_submission} />
                             {activity.my_submission.grade !== null && activity.my_submission.grade !== undefined && (
                               <div className="pt-2 border-t border-emerald-500/20">
-                                <p className="text-xs font-bold text-emerald-400">Nota: {activity.my_submission.grade.toFixed(1)}</p>
+                                <p className="text-xs font-bold text-emerald-400 light:text-emerald-700">Nota: {activity.my_submission.grade.toFixed(1)}</p>
                                 {activity.my_submission.feedback && (
                                   <p className="text-xs text-muted-foreground">{activity.my_submission.feedback}</p>
                                 )}
@@ -405,7 +392,7 @@ export default function TraineesPage() {
                           rel="noopener noreferrer"
                           className="flex items-center gap-3 p-3 bg-secondary rounded-xl hover:bg-secondary/80 border border-border text-xs font-semibold transition"
                         >
-                          <div className="bg-rose-500/10 text-rose-500 p-2 rounded-lg">
+                          <div className="bg-rose-500/10 text-rose-500 light:text-rose-600 p-2 rounded-lg">
                             <Video className="w-4 h-4" />
                           </div>
                           <span className="flex-1 truncate">Vídeo de Apoio {i + 1}</span>
@@ -445,7 +432,7 @@ export default function TraineesPage() {
                       </p>
                     )}
                     {(selectedNode?.deadline || relatedActivity.deadline) && (
-                      <p className="text-[10px] text-amber-400 flex items-center gap-1 font-semibold">
+                      <p className="text-[10px] text-amber-400 light:text-amber-700 flex items-center gap-1 font-semibold">
                         <Clock className="w-3.5 h-3.5" /> Prazo de entrega: {new Date(selectedNode?.deadline || relatedActivity.deadline).toLocaleString("pt-BR")}
                       </p>
                     )}
@@ -453,11 +440,11 @@ export default function TraineesPage() {
                     {/* Submission status or form */}
                     {relatedActivity.my_submission ? (
                       <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/20 p-3 space-y-2">
-                        <p className="text-xs font-semibold text-emerald-400">✓ Atividade Enviada</p>
+                        <p className="text-xs font-semibold text-emerald-400 light:text-emerald-700">✓ Atividade Enviada</p>
                         <SubmissionContent submission={relatedActivity.my_submission} />
                         {relatedActivity.my_submission.grade !== null && relatedActivity.my_submission.grade !== undefined && (
                           <div className="pt-2 border-t border-emerald-500/20">
-                            <p className="text-xs font-bold text-emerald-400">Nota: {relatedActivity.my_submission.grade.toFixed(1)}</p>
+                            <p className="text-xs font-bold text-emerald-400 light:text-emerald-700">Nota: {relatedActivity.my_submission.grade.toFixed(1)}</p>
                             {relatedActivity.my_submission.feedback && (
                               <p className="text-xs text-muted-foreground">{relatedActivity.my_submission.feedback}</p>
                             )}

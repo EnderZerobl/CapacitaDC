@@ -146,7 +146,7 @@ export function ViewContentCard({ content }: ViewContentCardProps) {
                       className="flex items-center gap-3 p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors group"
                     >
                       <div className="h-8 w-8 rounded bg-red-500/20 flex items-center justify-center shrink-0">
-                        <Video className="h-4 w-4 text-red-400" />
+                        <Video className="h-4 w-4 text-red-400 light:text-red-700" />
                       </div>
                       <span className="text-sm text-foreground flex-1 truncate">
                         {getVideoLabel(video, index)}

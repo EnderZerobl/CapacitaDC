@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { axisLabel, homePath, isStaff } from "@/lib/roles"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -124,8 +125,9 @@ export default function PerfilPage() {
           </Button>
           <div>
             <h1 className="text-lg font-bold text-foreground">Perfil do Usuário</h1>
-            <p className="text-xs text-muted-foreground">Visível apenas para admins e PlugInfo</p>
+            <p className="text-xs text-muted-foreground">Visível apenas para a equipe de gestão</p>
           </div>
+          <ThemeToggle className="ml-auto" />
         </div>
       </header>
 
@@ -141,7 +143,7 @@ export default function PerfilPage() {
                 <div className="flex items-center gap-3 flex-wrap">
                   <h2 className="text-2xl font-bold text-foreground">{profile.name}</h2>
                   {isTrainee && profile.rotacao && (
-                    <Badge variant="outline" className={`${profile.rotacao === 1 ? "border-sky-500/30 text-sky-400" : "border-violet-500/30 text-violet-400"}`}>
+                    <Badge variant="outline" className={`${profile.rotacao === 1 ? "border-sky-500/30 text-sky-400 light:text-sky-700" : "border-violet-500/30 text-violet-400 light:text-violet-700"}`}>
                       Rotação {profile.rotacao}
                     </Badge>
                   )}
@@ -166,7 +168,7 @@ export default function PerfilPage() {
                   <div className="text-center">
                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Média Ponderada</p>
                     {profile.nota_rotacao != null ? (
-                      <p className={`text-lg font-black ${profile.nota_rotacao >= 7 ? "text-emerald-400" : profile.nota_rotacao >= 5 ? "text-amber-400" : "text-rose-400"}`}>
+                      <p className={`text-lg font-black ${profile.nota_rotacao >= 7 ? "text-emerald-400 light:text-emerald-700" : profile.nota_rotacao >= 5 ? "text-amber-400 light:text-amber-700" : "text-rose-400 light:text-rose-700"}`}>
                         {profile.nota_rotacao.toFixed(2)}
                       </p>
                     ) : (
@@ -203,7 +205,7 @@ export default function PerfilPage() {
                   <div key={np.node_id} className={`flex items-center justify-between p-2.5 rounded-lg border transition-colors ${np.completed ? "border-emerald-500/20 bg-emerald-500/5" : "border-border bg-secondary/30"}`}>
                     <div className="flex items-center gap-2">
                       {np.completed
-                        ? <Check className="h-4 w-4 text-emerald-400 shrink-0" />
+                        ? <Check className="h-4 w-4 text-emerald-400 light:text-emerald-700 shrink-0" />
                         : np.node_type === "game"
                         ? <Gamepad2 className="h-4 w-4 text-muted-foreground shrink-0" />
                         : <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -261,11 +263,11 @@ export default function PerfilPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         {sub.grade != null ? (
-                          <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-[9px]">
+                          <Badge className="bg-emerald-500/10 text-emerald-400 light:text-emerald-700 border-emerald-500/30 text-[9px]">
                             <Award className="h-2.5 w-2.5 mr-0.5" />{sub.grade.toFixed(1)}
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="text-amber-400 border-amber-500/30 text-[9px]">Aguardando avaliação</Badge>
+                          <Badge variant="outline" className="text-amber-400 light:text-amber-700 border-amber-500/30 text-[9px]">Aguardando avaliação</Badge>
                         )}
                         {sub.submitted_at && (
                           <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">

@@ -24,9 +24,9 @@ export const eixoLabels: Record<Eixo, string> = {
 }
 
 export const eixoColors: Record<Eixo, string> = {
-  vendas: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  conexoes: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  experiencia: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  trainee: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  vendas: "bg-emerald-500/20 text-emerald-400 light:text-emerald-700 border-emerald-500/30",
+  conexoes: "bg-blue-500/20 text-blue-400 light:text-blue-700 border-blue-500/30",
+  experiencia: "bg-amber-500/20 text-amber-400 light:text-amber-700 border-amber-500/30",
+  trainee: "bg-purple-500/20 text-purple-400 light:text-purple-700 border-purple-500/30",
 }
 

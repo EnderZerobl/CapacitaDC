@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { AuthProvider } from '@/lib/auth-context'
+import { ThemeProvider } from '@/components/theme-provider'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -37,11 +38,18 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="pt-BR">
+    // next-themes troca a classe do <html> antes da hidratação.
+    <html lang="pt-BR" suppressHydrationWarning>
       <body className={`font-sans antialiased`}>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        {/* O escuro continua como padrão; a escolha de cada pessoa fica salva no navegador.
+            Ele é marcado como "theme-dark", não "dark", para as variantes dark: dos
+            componentes continuarem desligadas como sempre estiveram (ver globals.css). */}
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}
+          value={{ light: "light", dark: "theme-dark" }} disableTransitionOnChange>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>

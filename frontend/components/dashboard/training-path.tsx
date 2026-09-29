@@ -143,16 +143,16 @@ export function TrainingPath({ nodes, onSelectNode, highlighted = false, axisNam
                   <TooltipContent side="top" align="center" className="max-w-[200px] text-center">
                     <p className="text-xs font-bold">{node.name}</p>
                     {node.type === "game" && node.completed && (
-                      <p className="mt-1 text-[10px] font-semibold text-emerald-400">Pontuação: {node.user_score} pts</p>
+                      <p className="mt-1 text-[10px] font-semibold text-emerald-400 light:text-emerald-700">Pontuação: {node.user_score} pts</p>
                     )}
                     {node.type === "material" && node.completed && (
-                      <p className="mt-1 text-[10px] font-semibold text-emerald-400">Lido (+50 pts)</p>
+                      <p className="mt-1 text-[10px] font-semibold text-emerald-400 light:text-emerald-700">Lido (+50 pts)</p>
                     )}
                     {!node.unlocked && (
-                      <p className="mt-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold text-rose-400">
+                      <p className="mt-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold text-rose-400 light:text-rose-700">
                         <span className="flex items-center gap-1"><Lock className="mr-1 size-3" />Bloqueado</span>
                         {scheduled ? (
-                          <span className="text-[9px] text-amber-400">
+                          <span className="text-[9px] text-amber-400 light:text-amber-700">
                             ⏰ Disponível em {asUtcDate(node.released_at!).toLocaleString("pt-BR")}
                           </span>
                         ) : node.linkedTo ? (

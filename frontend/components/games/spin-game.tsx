@@ -61,7 +61,7 @@ export function SpinGame({ nodeName, questions = [], onComplete, onClose }: Spin
     return (
       <Card className="w-full max-w-xl mx-auto border-primary/20">
         <CardHeader className="text-center">
-          <Star className="w-12 h-12 mx-auto text-yellow-500" />
+          <Star className="w-12 h-12 mx-auto text-yellow-500 light:text-yellow-600" />
           <CardTitle>Jogo concluído!</CardTitle>
           <p className="text-sm text-muted-foreground">{nodeName}</p>
         </CardHeader>
@@ -87,7 +87,7 @@ export function SpinGame({ nodeName, questions = [], onComplete, onClose }: Spin
                   <p className="font-semibold">{index + 1}. {question?.text}</p>
                   <p className="text-muted-foreground">Sua resposta: {option?.text}</p>
                   <p className="flex items-center gap-2 font-medium">
-                    {item.is_correct ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <AlertCircle className="h-4 w-4 text-amber-500" />}
+                    {item.is_correct ? <CheckCircle2 className="h-4 w-4 text-emerald-500 light:text-emerald-600" /> : <AlertCircle className="h-4 w-4 text-amber-500 light:text-amber-600" />}
                     {item.is_correct ? "Resposta correta" : "Revise esta resposta"} · {item.score} pts
                   </p>
                   {item.feedback && <p>{item.feedback}</p>}

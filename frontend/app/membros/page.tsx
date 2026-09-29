@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { openAuthenticatedFile } from "@/lib/api-client"
 import { LinkedText, safeHref } from "@/components/content/linked-text"
 import { axisLabel, isStaff } from "@/lib/roles"
@@ -19,7 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Card, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import {
-  LayoutGrid, Search, LogOut, User, BookOpen, Trophy, Compass,
+  LayoutGrid, Search, LogOut, User, BookOpen, Compass,
   FileText, Video, ExternalLink, Award, ClipboardList, Upload, Clock, Link2
 } from "lucide-react"
 
@@ -31,10 +32,6 @@ import type { GameAnswer, GameResult } from "@/features/nodes/types"
 import { useActivities } from "@/features/activities/hooks"
 import { useMaterials } from "@/features/materials/hooks"
 
-interface LeaderboardEntry {
-  id: string; name: string; email: string; cargo: string; type: string; eixo?: string; pontos_acumulados: number
-}
-
 export default function MembrosPage() {
   const router = useRouter()
   const { user, logout, isLoading, refreshUser } = useAuth()
@@ -44,7 +41,6 @@ export default function MembrosPage() {
   const { nodes, completeNode, submitGame, refresh: refreshNodes } = useNodes()
   const { activities, refresh: refreshActivities } = useActivities()
 
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([])
   const [activeTab, setActiveTab] = useState("trilhas")
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedNode, setSelectedNode] = useState<any | null>(null)
@@ -55,27 +51,17 @@ export default function MembrosPage() {
   )
   const [selectedEixo, setSelectedEixo] = useState<string>("todos")
 
-  const fetchLeaderboard = async () => {
-    const token = localStorage.getItem("token")
-    if (!token) return
-    try {
-      const res = await fetch("/api/leaderboard", { headers: { "Authorization": `Bearer ${token}` } })
-      if (res.ok) setLeaderboard(await res.json())
-    } catch (e) { console.error(e) }
-  }
-
   useEffect(() => {
     if (!isLoading) {
       if (!user) router.push("/login")
       else if (user.type === "trainee") router.push("/trainees")
       else if (isStaff(user.type)) router.push("/")
-      else fetchLeaderboard()
     }
   }, [user, isLoading, router])
 
   const refreshProgress = async () => {
     // The submission is already saved; a refresh failure must not be reported as a failed submission.
-    const results = await Promise.allSettled([refreshUser(), fetchLeaderboard(), refreshNodes(), refreshMaterials(), refreshActivities()])
+    const results = await Promise.allSettled([refreshUser(), refreshNodes(), refreshMaterials(), refreshActivities()])
     results.forEach(result => {
       if (result.status === "rejected") console.error("Erro ao atualizar progresso:", result.reason)
     })
@@ -167,6 +153,7 @@ export default function MembrosPage() {
                   </Badge>
                 </div>
               )}
+              <ThemeToggle />
               <Button
                 variant="ghost"
                 size="sm"
@@ -350,7 +337,7 @@ export default function MembrosPage() {
                           rel="noopener noreferrer"
                           className="flex items-center gap-3 p-3 bg-secondary rounded-xl hover:bg-secondary/80 border border-border text-xs font-semibold transition"
                         >
-                          <div className="bg-rose-500/10 text-rose-500 p-2 rounded-lg">
+                          <div className="bg-rose-500/10 text-rose-500 light:text-rose-600 p-2 rounded-lg">
                             <Video className="w-4 h-4" />
                           </div>
                           <span className="flex-1 truncate">Vídeo de Apoio {i + 1}</span>
@@ -391,7 +378,7 @@ export default function MembrosPage() {
                       </p>
                     )}
                     {(selectedNode?.deadline || relatedActivity.deadline) && (
-                      <p className="text-[10px] text-amber-400 flex items-center gap-1 font-semibold">
+                      <p className="text-[10px] text-amber-400 light:text-amber-700 flex items-center gap-1 font-semibold">
                         <Clock className="w-3.5 h-3.5" /> Prazo de entrega: {new Date(selectedNode?.deadline || relatedActivity.deadline).toLocaleString("pt-BR")}
                       </p>
                     )}
@@ -399,11 +386,11 @@ export default function MembrosPage() {
                     {/* Submission status or form */}
                     {relatedActivity.my_submission ? (
                       <div className="rounded-xl bg-emerald-500/5 border border-emerald-500/20 p-3 space-y-2">
-                        <p className="text-xs font-semibold text-emerald-400">✓ Atividade Enviada</p>
+                        <p className="text-xs font-semibold text-emerald-400 light:text-emerald-700">✓ Atividade Enviada</p>
                         <SubmissionContent submission={relatedActivity.my_submission} />
                         {relatedActivity.my_submission.grade !== null && relatedActivity.my_submission.grade !== undefined && (
                           <div className="pt-2 border-t border-emerald-500/20">
-                            <p className="text-xs font-bold text-emerald-400">Nota: {relatedActivity.my_submission.grade.toFixed(1)}</p>
+                            <p className="text-xs font-bold text-emerald-400 light:text-emerald-700">Nota: {relatedActivity.my_submission.grade.toFixed(1)}</p>
                             {relatedActivity.my_submission.feedback && (
                               <p className="text-xs text-muted-foreground">{relatedActivity.my_submission.feedback}</p>
                             )}

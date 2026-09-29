@@ -7,6 +7,11 @@ export interface SubmissionAttachment {
   url: string
 }
 
+export interface AttachmentUploadToken {
+  pathname: string
+  token: string
+}
+
 export interface ActivitySubmission {
   attachments?: SubmissionAttachment[]
   links?: string[]

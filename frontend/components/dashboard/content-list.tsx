@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ContentCard, ContentItem } from "./content-card"
-import { axisLabel, type MemberAxis } from "@/lib/roles"
+import { axisLabel, groupByEixo, type MemberAxis } from "@/lib/roles"
 import { Plus, Search, Edit2, Trash } from "lucide-react"
 
 interface ContentListProps {
@@ -43,6 +43,7 @@ export function ContentList({
     const matchesType = filterType === "all" || content.type === filterType
     return matchesSearch && matchesType
   })
+  const contentGroups = groupByEixo(filteredContents)
 
   const handleAddNew = () => {
     const isOrg = userType === "organizador"
@@ -115,52 +116,59 @@ export function ContentList({
             </Button>
           </div>
 
-          {/* Grid de Conteúdos */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredContents.map((content) => (
-              <div
-                key={content.id}
-                className="flex flex-col justify-between p-5 rounded-2xl border-2 border-border bg-card hover:border-primary/30 transition-all duration-200"
-              >
-                <div>
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full uppercase font-bold tracking-wider">
-                      {content.type}
-                    </span>
-                    <span className="text-[10px] bg-secondary text-muted-foreground border border-border px-2 py-0.5 rounded-full uppercase font-semibold">
-                      {content.eixo === "trainee" ? "Trainee" : content.eixo === "all" ? "Todos" : axisLabel(content.eixo)}
-                    </span>
-                  </div>
-                  <h4 className="font-bold text-foreground line-clamp-1">{content.name}</h4>
-                  <p className="text-xs text-muted-foreground mt-2 line-clamp-3 leading-relaxed">
-                    {content.text || "Sem conteúdo de texto."}
-                  </p>
-                </div>
-                <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-border">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => onDeleteContent(content.id)}
-                  >
-                    <Trash className="w-3.5 h-3.5 mr-1" /> Excluir
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs border-border"
-                    onClick={() => setEditingContent(content)}
-                  >
-                    <Edit2 className="w-3.5 h-3.5 mr-1" /> Editar
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {filteredContents.length === 0 && (
+          {/* Conteúdos separados por eixo */}
+          {filteredContents.length === 0 ? (
             <div className="text-center py-12 border-2 border-dashed border-border rounded-2xl text-muted-foreground text-sm">
               Nenhum conteúdo encontrado.
+            </div>
+          ) : (
+            <div className="space-y-8">
+              {contentGroups.map(({ eixo, label, items }) => (
+                <div key={eixo} className="space-y-4">
+                  <h3 className="text-base font-semibold text-foreground border-b border-border pb-2">{label}</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {items.map((content) => (
+                      <div
+                        key={content.id}
+                        className="flex flex-col justify-between p-5 rounded-2xl border-2 border-border bg-card hover:border-primary/30 transition-all duration-200"
+                      >
+                        <div>
+                          <div className="flex justify-between items-start mb-3">
+                            <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full uppercase font-bold tracking-wider">
+                              {content.type}
+                            </span>
+                            <span className="text-[10px] bg-secondary text-muted-foreground border border-border px-2 py-0.5 rounded-full uppercase font-semibold">
+                              {content.eixo === "trainee" ? "Trainee" : content.eixo === "all" ? "Todos" : axisLabel(content.eixo)}
+                            </span>
+                          </div>
+                          <h4 className="font-bold text-foreground line-clamp-1">{content.name}</h4>
+                          <p className="text-xs text-muted-foreground mt-2 line-clamp-3 leading-relaxed">
+                            {content.text || "Sem conteúdo de texto."}
+                          </p>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-border">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => onDeleteContent(content.id)}
+                          >
+                            <Trash className="w-3.5 h-3.5 mr-1" /> Excluir
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs border-border"
+                            onClick={() => setEditingContent(content)}
+                          >
+                            <Edit2 className="w-3.5 h-3.5 mr-1" /> Editar
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </>

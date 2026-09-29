@@ -1,11 +1,13 @@
 import Link from "next/link"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LayoutGrid, ArrowLeft, Info } from "lucide-react"
 
 export default function RecuperarSenhaPage() {
   return (
-    <main className="min-h-screen bg-background flex items-center justify-center p-4">
+    <main className="relative min-h-screen bg-background flex items-center justify-center p-4">
+      <ThemeToggle className="absolute right-4 top-4" />
       <div className="w-full max-w-md space-y-6">
         <div className="flex flex-col items-center gap-3">
           <div className="h-16 w-16 rounded-2xl bg-primary/20 flex items-center justify-center">

@@ -1,8 +1,9 @@
 // features/activities/api.ts — All HTTP calls related to activities
 
-import { apiClient, responseError } from "@/lib/api-client"
+import { apiClient } from "@/lib/api-client"
 import type {
   Activity,
+  AttachmentUploadToken,
   SubmissionAttachment,
   ActivityCreatePayload,
   ActivityUpdatePayload,
@@ -13,15 +14,21 @@ import type {
 } from "./types"
 
 export const activitiesApi = {
+  // A Vercel recusa corpos acima de 4,5 MB nas funções: o arquivo vai direto para o
+  // armazenamento privado com um token da API, que depois confere e registra o envio.
   uploadAttachment: async (activityId: string, file: File, nodeId?: string): Promise<SubmissionAttachment> => {
-    const data = new FormData()
-    data.append("file", file)
-    if (nodeId) data.append("node_id", nodeId)
-    const response = await fetch(`/api/activities/${activityId}/attachments`, {
-      method: "POST", headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }, body: data,
+    const attachments = `/api/activities/${activityId}/attachments`
+    const { pathname, token } = await apiClient.post<AttachmentUploadToken>(`${attachments}/upload-token`, {
+      name: file.name, size: file.size, node_id: nodeId,
     })
-    if (!response.ok) throw await responseError(response)
-    return response.json()
+    try {
+      // Carregada só ao enviar: a biblioteca somaria ~33 KB (gzip) a cada página com o formulário.
+      const { put } = await import("@vercel/blob/client")
+      await put(pathname, file, { access: "private", token })
+    } catch (cause) {
+      throw new Error(`${file.name}: não foi possível enviar o arquivo. Tente novamente.`, { cause })
+    }
+    return apiClient.post<SubmissionAttachment>(attachments, { pathname, name: file.name, node_id: nodeId })
   },
   list: () => apiClient.get<Activity[]>("/api/activities"),
 

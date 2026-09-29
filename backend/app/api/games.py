@@ -58,12 +58,32 @@ def update_game(game_id: str, payload: schemas.GameUpdate, db: Session = Depends
 
 @router.delete("/games/{game_id}")
 def delete_game(game_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_staff)):
+    """A draft deletes freely. A published game deletes too, as long as none of
+    its revisions (any version, not just the latest) is still tied to a trail
+    step — that step would lose its content along with the deleted revision."""
     game = game_service.game_for_author(db, game_id, user, lock=True)
-    if game.revisions:
-        raise HTTPException(409, "Jogos publicados preservam suas versões e não podem ser excluídos")
+    revision_ids = [revision.id for revision in game.revisions]
+    if revision_ids:
+        linked = db.query(models.TrainingNode).filter(
+            models.TrainingNode.game_revision_id.in_(revision_ids)
+        ).count()
+        if linked:
+            plural = "s" if linked != 1 else ""
+            raise HTTPException(
+                409,
+                f"Este jogo está em uso na trilha ({linked} etapa{plural}). Remova-o da trilha antes de excluir o jogo.",
+            )
+        # Defensivo: uma tentativa só existe presa a um nó vivo (excluir o nó já
+        # exclui suas tentativas junto), então isto não deveria disparar nunca —
+        # protege mesmo assim contra um dado órfão de uma versão anterior.
+        attempts = db.query(models.GameAttempt).filter(
+            models.GameAttempt.game_revision_id.in_(revision_ids)
+        ).count()
+        if attempts:
+            raise HTTPException(409, "Este jogo tem tentativas registradas e não pode ser excluído.")
     db.delete(game)
     db.commit()
-    return {"detail": "Rascunho excluído"}
+    return {"detail": "Jogo excluído com sucesso"}
 
 
 @router.post("/games/{game_id}/duplicate", response_model=schemas.GameOut)

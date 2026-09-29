@@ -87,15 +87,6 @@ def get_current_organizador_or_admin(current_user: models.User = Depends(get_cur
         )
     return current_user
 
-def get_current_member_or_above(current_user: models.User = Depends(get_current_user)) -> models.User:
-    if current_user.type not in ["admin", "organizador", "gerente", "membro"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acesso não autorizado.",
-        )
-    return current_user
-
-
 def get_current_staff(current_user: models.User = Depends(get_current_user)) -> models.User:
     """Entry to the administrative panel. What each role may change is checked per resource.
 

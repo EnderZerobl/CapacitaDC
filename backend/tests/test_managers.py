@@ -204,7 +204,7 @@ class ManagerTests(unittest.TestCase):
             db.get(models.User, 'gerente_vendas').eixo = 'Marketing'
             db.commit()
         self.content('vendas')
-        self.assertEqual(self.request('GET', '/api/users', role='gerente_vendas'), (200, []))
+        self.assertEqual(self.request('GET', '/api/users', role='gerente_vendas')[0], 403)
         for method, path, payload in [('GET', '/api/grades', None), ('GET', '/api/submissions', None),
                                       ('GET', '/api/games', None),
                                       ('POST', '/api/materials', {'name': 'X', 'type': 'membro', 'eixo': 'vendas'})]:
@@ -340,7 +340,7 @@ class ManagerTests(unittest.TestCase):
                                       role='gerente_vendas')[0], 403)
         self.assertEqual(self.request('PUT', '/api/users/trainees/trainee', {'rotacao': 1}, role='gerente_vendas')[0], 403)
 
-    # -- corrections, grades and ranking ----------------------------------
+    # -- corrections and grades ------------------------------------------
 
     def test_corrections_need_member_and_activity_of_the_manager_axis(self):
         _, activity, node = self.content('vendas')
@@ -373,7 +373,7 @@ class ManagerTests(unittest.TestCase):
                                       role='gerente_conexoes')[0], 403)
         self.assertEqual(self.request('GET', '/api/submissions', role='gerente_conexoes'), (200, []))
 
-    def test_grades_profile_and_ranking_are_scoped_to_the_manager_axis(self):
+    def test_grades_and_profile_are_scoped_to_the_manager_axis(self):
         _, sales_activity, sales_node = self.content('vendas')
         other_material = self.create('materials', {'name': 'Conexões', 'type': 'membro', 'eixo': 'conexoes'})
         other_node = self.create('nodes', {'type': 'material', 'eixo': 'conexoes', 'reference_id': other_material['id'],
@@ -393,8 +393,6 @@ class ManagerTests(unittest.TestCase):
         _, profile = self.request('GET', '/api/users/membro_vendas/profile', role='gerente_vendas')
         self.assertEqual([item['node_id'] for item in profile['node_progress']], [sales_node['id']])
         self.assertEqual(profile['pontos_acumulados'], 0)
-        _, ranking = self.request('GET', '/api/leaderboard', role='gerente_vendas')
-        self.assertEqual({(item['id'], item['pontos_acumulados']) for item in ranking}, {('membro_vendas', 0), ('trainee', 0)})
         # Os totais globais continuam intactos para quem vê tudo.
         _, profile = self.request('GET', '/api/users/membro_vendas/profile')
         self.assertEqual(profile['pontos_acumulados'], 50)
@@ -402,6 +400,15 @@ class ManagerTests(unittest.TestCase):
         legacy = next(item for item in admin_rows if item['id'] == 'membro_vendas')
         self.assertEqual(legacy['nodes_total'], 1)  # eixo gravado como "Vendas" conta a trilha certa
         self.assertEqual(next(item for item in admin_rows if item['id'] == 'membro_conexoes')['nodes_total'], 1)
+
+    def test_participants_cannot_list_people_and_ranking_is_gone(self):
+        # Pela ferramenta de inspeção dava para ler e-mails, médias e pontos de todos.
+        for role in ['membro', 'membro_vendas', 'trainee']:
+            with self.subTest(role=role):
+                self.assertEqual(self.request('GET', '/api/users', role=role)[0], 403)
+                self.assertEqual(self.request('GET', '/api/leaderboard', role=role)[0], 404)
+        for role in ['admin', 'organizador', 'gerente_vendas']:
+            self.assertEqual(self.request('GET', '/api/users', role=role)[0], 200, role)
 
     # -- library --------------------------------------------------------------
 

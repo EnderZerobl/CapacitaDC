@@ -8,6 +8,7 @@ export const gamesApi = {
   update: (id: string, draft: GameDraft) => apiClient.patch<Game>(`/api/games/${id}`, draft),
   publish: (id: string) => apiClient.post<Game>(`/api/games/${id}/publish`),
   duplicate: (id: string) => apiClient.post<Game>(`/api/games/${id}/duplicate`),
+  remove: (id: string) => apiClient.delete(`/api/games/${id}`),
   begin: (nodeId: string) => apiClient.post<GameAttempt>(`/api/nodes/${nodeId}/attempts`),
   getAttempt: (id: string) => apiClient.get<GameAttempt>(`/api/game-attempts/${id}`),
   answer: (id: string, stepId: string, optionId: string) =>
