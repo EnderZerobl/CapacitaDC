@@ -29,6 +29,10 @@ export interface TrainingNode {
   unlocked: boolean
   completed: boolean
   user_score: number
+  grade?: number | null
+  allow_retry?: boolean
+  is_required?: boolean
+  weight?: number
   questions?: Question[]
   x_pos?: number | null
   y_pos?: number | null
@@ -68,6 +72,8 @@ export interface GameAnswer {
 }
 
 export interface GameResult {
+  grade?: number
+  best_grade?: number
   detail: string
   attempt_score: number
   max_score: number

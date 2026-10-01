@@ -19,6 +19,8 @@ export interface ActivitySubmission {
   file_url?: string | null
   comment?: string
   submitted_at?: string | null
+  previous_grade?: number | null
+  effective_grade?: number | null
   grade?: number | null
   feedback?: string
 }
@@ -35,6 +37,8 @@ export interface Activity {
   effective_open: boolean
   submission_count: number
   weight?: number
+  allow_retry?: boolean
+  is_required?: boolean
   created_by?: string | null
   created_at?: string | null
   my_submission?: ActivitySubmission | null
@@ -48,6 +52,8 @@ export interface ActivityCreatePayload {
   deadline?: string | null
   material_id?: string | null
   weight?: number
+  allow_retry?: boolean
+  is_required?: boolean
 }
 
 export interface ActivityUpdatePayload {
@@ -58,6 +64,8 @@ export interface ActivityUpdatePayload {
   accepts_file?: boolean
   material_id?: string | null
   weight?: number
+  allow_retry?: boolean
+  is_required?: boolean
 }
 
 export interface SubmissionCreatePayload {
@@ -82,6 +90,8 @@ export interface ActivitySubmissionOut {
   file_url?: string | null
   comment?: string
   submitted_at?: string | null
+  previous_grade?: number | null
+  effective_grade?: number | null
   grade?: number | null
   feedback?: string
   user_name?: string | null

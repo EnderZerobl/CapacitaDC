@@ -5,12 +5,11 @@ import { Copy, Eye, Gamepad2, Layers, ListChecks, ListOrdered, Loader2, Pencil, 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { gamesApi } from "@/features/games/api"
 import { gameFormatLabels, gameFormatSummaries } from "@/features/games/drafts"
 import type { Game, GameFormat } from "@/features/games/types"
 import { GameEditor, type GameAxis } from "./game-editor"
-import { GamePreview } from "./game-preview"
+import { GamePreviewScreen } from "./game-preview-screen"
 
 const allAxes: GameAxis[] = [
   { value: "trainee", label: "Trainees" },
@@ -67,6 +66,8 @@ export function GameLibrary({ isOrganizer, managerAxis = null }: { isOrganizer: 
   }
   if (editing) return <GameEditor key={editing.key} game={editing.game} format={editing.format} axes={axes} onChanged={changed} onClose={() => setEditing(null)} />
 
+  if (preview) return <GamePreviewScreen draft={preview} onClose={() => setPreview(null)} backLabel="Voltar aos jogos" />
+
   const filtered = games.filter(game => `${game.title} ${gameFormatLabels[game.format]} ${game.eixo}`.toLocaleLowerCase("pt-BR").includes(query.toLocaleLowerCase("pt-BR")))
   return <div className="space-y-6">
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -91,7 +92,6 @@ export function GameLibrary({ isOrganizer, managerAxis = null }: { isOrganizer: 
           disabled={busy} onClick={() => void remove(game)}><Trash2 className="size-4" />Excluir</Button>
       </div>
     </article>)}</div>}
-    <p className="text-sm text-muted-foreground">Depois de publicar, selecione o jogo ao adicionar uma etapa à trilha. O mesmo jogo pode ser reutilizado em várias etapas do seu eixo.</p>
-    <Dialog open={!!preview} onOpenChange={open => { if (!open) setPreview(null) }}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Prévia do rascunho</DialogTitle><DialogDescription>Veja o conteúdo de autoria sem registrar uma tentativa.</DialogDescription></DialogHeader>{preview && <GamePreview draft={preview} />}</DialogContent></Dialog>
+    <p className="text-sm text-muted-foreground">Depois de publicar, selecione o jogo ao adicionar uma etapa à trilha. Na etapa, defina a repetição, a obrigatoriedade e o peso da nota. O mesmo jogo pode ser reutilizado em várias etapas do seu eixo.</p>
   </div>
 }

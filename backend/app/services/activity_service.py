@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.services.node_service import lock_user
+from app.services.assessment_service import effective_grade
 
 
 def is_effectively_open(activity: models.Activity) -> bool:
@@ -62,14 +63,21 @@ def weighted_average(pairs: Iterable[tuple[float, float]]) -> float | None:
     return round(total / total_weight, 2)
 
 
-def graded_pairs(db: Session, user_id: str) -> list[tuple[float, float]]:
-    rows = db.query(models.ActivitySubmission, models.Activity).join(
+def graded_pairs(db: Session, user_id: str, eixos: set[str] | None = None) -> list[tuple[float, float]]:
+    submissions = db.query(models.ActivitySubmission, models.Activity).join(
         models.Activity, models.Activity.id == models.ActivitySubmission.activity_id,
-    ).filter(
-        models.ActivitySubmission.user_id == user_id,
-        models.ActivitySubmission.grade.isnot(None),
-    ).all()
-    return [(float(submission.grade), activity_weight(activity)) for submission, activity in rows]
+    ).filter(models.ActivitySubmission.user_id == user_id, models.Activity.is_required.is_(True))
+    games = db.query(models.UserNodeProgress, models.TrainingNode).join(
+        models.TrainingNode, models.TrainingNode.id == models.UserNodeProgress.node_id,
+    ).filter(models.UserNodeProgress.user_id == user_id, models.UserNodeProgress.completed.is_(True),
+             models.UserNodeProgress.grade.isnot(None), models.TrainingNode.type == "game",
+             models.TrainingNode.is_required.is_(True))
+    if eixos is not None:
+        submissions = submissions.filter(models.Activity.eixo.in_(eixos))
+        games = games.filter(models.TrainingNode.eixo.in_(eixos))
+    pairs = [(effective_grade(sub), activity_weight(activity)) for sub, activity in submissions.all()
+             if effective_grade(sub) is not None]
+    return pairs + [(progress.grade, node.weight) for progress, node in games.all()]
 
 
 def recompute_user_grade(db: Session, user_id: str) -> float | None:
@@ -101,7 +109,7 @@ def graded_user_ids(db: Session, activity_id: str) -> list[str]:
     """Who has a grade on this activity — collect before deleting or reweighting it."""
     rows = db.query(models.ActivitySubmission.user_id).filter(
         models.ActivitySubmission.activity_id == activity_id,
-        models.ActivitySubmission.grade.isnot(None),
+        (models.ActivitySubmission.grade.isnot(None) | models.ActivitySubmission.previous_grade.isnot(None)),
     ).all()
     return [user_id for (user_id,) in rows]
 
@@ -130,9 +138,7 @@ def axis_metrics(db: Session, user_id: str, eixos: set[str]) -> dict:
     points = sum(50 if node.type == "material" else row.score for row, node in progress)
     return {
         "pontos_acumulados": points,
-        "nota_rotacao": weighted_average(
-            (float(sub.grade), activity_weight(activity)) for sub, activity in submissions if sub.grade is not None
-        ),
+        "nota_rotacao": weighted_average(graded_pairs(db, user_id, eixos)),
         "nodes_completed": len(progress),
         "nodes_total": db.query(models.TrainingNode).filter(models.TrainingNode.eixo.in_(eixos)).count(),
         "activities_submitted": len(submissions),
@@ -147,6 +153,7 @@ def axis_metrics(db: Session, user_id: str, eixos: set[str]) -> dict:
 def submission_to_out(submission, *, user=None, activity=None) -> schemas.ActivitySubmissionOut:
     """One contract for every submission response, so no caller forgets a field."""
     result = schemas.ActivitySubmissionOut.model_validate(submission)
+    result.effective_grade = effective_grade(submission)
     person = user if user is not None else submission.user
     if person is not None:
         result.user_name = person.name

@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Float, Boolean, ForeignKey, Text, Integer, DateTime, JSON, UniqueConstraint
+from sqlalchemy import Column, String, Float, Boolean, ForeignKey, Text, Integer, DateTime, JSON, UniqueConstraint, true
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -69,6 +69,9 @@ class TrainingNode(Base):
     reference_id = Column(String, nullable=True)  # Material.id if type == "material", null if game
     game_revision_id = Column(String, ForeignKey("game_revisions.id", ondelete="RESTRICT"), nullable=True)
     game_revision = relationship("GameRevision")
+    allow_retry = Column(Boolean, default=True, server_default=true(), nullable=False)
+    is_required = Column(Boolean, default=True, server_default=true(), nullable=False)
+    weight = Column(Float, default=1.0, server_default="1", nullable=False)
     eixo = Column(String, nullable=False)  # "vendas", "conexoes", "experiencia", "trainee"
     prerequisite_node_id = Column(String, ForeignKey("training_nodes.id", ondelete="SET NULL"), nullable=True)
     x_pos = Column(Float, nullable=True, default=0.0)
@@ -123,6 +126,7 @@ class UserNodeProgress(Base):
     node_id = Column(String, ForeignKey("training_nodes.id", ondelete="CASCADE"), nullable=False)
     completed = Column(Boolean, default=False, nullable=False)
     score = Column(Integer, default=0, nullable=False)
+    grade = Column(Float, nullable=True)  # Melhor nota do jogo, de 0 a 10
     completed_at = Column(DateTime, nullable=True)
 
     # Relationships
@@ -191,6 +195,8 @@ class Activity(Base):
     accepts_file = Column(Boolean, default=True, nullable=False)  # Se exige envio de arquivo
     deadline = Column(DateTime, nullable=True)     # None = sem prazo definido
     is_open = Column(Boolean, default=True, nullable=False)  # Fechamento manual ou automático via deadline
+    allow_retry = Column(Boolean, default=True, server_default=true(), nullable=False)
+    is_required = Column(Boolean, default=True, server_default=true(), nullable=False)
     weight = Column(Float, default=1.0, nullable=False)    # Peso para cálculo de média ponderada
     created_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, nullable=True)
@@ -213,7 +219,8 @@ class ActivitySubmission(Base):
     attachments = relationship("SubmissionAttachment", back_populates="submission")
     comment = Column(Text, nullable=True, default="")  # Comentário opcional do trainee
     submitted_at = Column(DateTime, nullable=True)
-    grade = Column(Float, nullable=True)           # Nota atribuída pelo admin (0-10)
+    grade = Column(Float, nullable=True)           # Nota da entrega atual (0-10)
+    previous_grade = Column(Float, nullable=True)  # Melhor nota das entregas anteriores
     feedback = Column(Text, nullable=True, default="")  # Feedback do avaliador
 
     # Relationships

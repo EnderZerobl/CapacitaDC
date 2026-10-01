@@ -29,7 +29,7 @@ Somente o administrador nomeia gerentes, troca seu eixo ou os remove do cargo; o
 | Consultar e corrigir entregas, baixar anexos | Sim, de membros do eixo em atividades do eixo | Sim, de trainees | Não |
 | Notas, progresso e perfil | Membros contados só na trilha do eixo | Trainees como o organizador os vê | Não |
 
-Os vínculos também são conferidos: não é possível ligar material, atividade, jogo ou pré-requisito de outro eixo, nem mover um recurso para fora do escopo do gerente (o eixo dele e o PlugInfo). Um gerente sem eixo válido perde também o acesso ao PlugInfo. Como membros enxergam as trilhas dos três eixos, uma atividade pode ter entregas de membros de outro eixo; nesse caso excluí-la ou mudar seu peso (o que alteraria notas de outras pessoas) fica com o administrador. O mesmo vale para conteúdos antigos compartilhados com a trilha de outro eixo.
+Os vínculos também são conferidos: não é possível ligar material, atividade, jogo ou pré-requisito de outro eixo, nem mover um recurso para fora do escopo do gerente (o eixo dele e o PlugInfo). Um gerente sem eixo válido perde também o acesso ao PlugInfo. Como membros enxergam as trilhas dos três eixos, uma atividade pode ter entregas de membros de outro eixo; nesse caso excluí-la ou mudar seu peso ou obrigatoriedade (o que alteraria notas de outras pessoas) fica com o administrador. A mesma regra vale para etapas de jogo com notas de membros de outro eixo. O mesmo vale para conteúdos antigos compartilhados com a trilha de outro eixo.
 
 Usuários antigos podem ter o eixo gravado pelo nome de exibição ("Vendas", "Conexões", "Experiência do Consumidor"). Esses nomes exatos produzem a mesma autorização que os códigos; valores desconhecidos negam o acesso em vez de serem adivinhados. Novas gravações usam o código, e a interface exibe o nome completo.
 
@@ -37,7 +37,7 @@ Usuários antigos podem ter o eixo gravado pelo nome de exibição ("Vendas", "C
 
 - `/login` e `/cadastro`: autenticação e cadastro público de trainee.
 - `/`: painel de administração, com pessoas, materiais, atividades, **Correções**, notas e trilhas. Para o gerente, o painel se identifica como **Gerente — <eixo>** e mostra apenas o seu escopo: o eixo e o PlugInfo.
-- `/jogos`: biblioteca e autoria de jogos, acessível a administradores, organizadores e gerentes (estes, no próprio eixo e no PlugInfo).
+- Aba **Atividades → Jogos** no painel (também disponível em `/jogos`): biblioteca e autoria de jogos, acessível a administradores, organizadores e gerentes (estes, no próprio eixo e no PlugInfo).
 - `/membros` e `/trainees`: consumo de conteúdo, trilhas e entregas.
 - `/perfil/[id]`: consulta administrativa do progresso, entregas e média calculada. A média não é editada nesse perfil.
 - `/recuperar-senha`: informa que a recuperação automática está indisponível e orienta procurar a administração; não simula envio de email.
@@ -46,11 +46,12 @@ Usuários antigos podem ter o eixo gravado pelo nome de exibição ("Vendas", "C
 
 ### Preparar a atividade
 
-Na aba **Atividades**, cadastre título, descrição, público, exigência de arquivo/link, prazo opcional, material de apoio opcional e peso.
+Na aba **Atividades**, cadastre título, descrição, público, exigência de arquivo/link, prazo opcional, material de apoio opcional e as regras de avaliação: **Permitir repetição**, **Obrigatória (vale nota)** e **Peso da nota**. As mesmas três opções existem nas etapas de jogo, na criação e em **Editar nó**; numa etapa de atividade elas vêm da atividade vinculada.
 
 - Peso maior dá maior participação na média.
-- **Peso 0 significa que a atividade não vale nota na média.** Ela ainda pode receber correção e feedback.
-- Peso omitido usa 1. Pesos novos negativos ou não numéricos são rejeitados.
+- **Obrigatória exige peso maior que zero.** Uma atividade opcional não entra na média; ela ainda pode receber correção e feedback.
+- Peso omitido usa 1. Pesos negativos ou não numéricos são rejeitados.
+- Sem repetição, cada pessoa faz uma única entrega: a segunda entrega e o envio de novos anexos são recusados (409). Com repetição (o padrão), vale a melhor nota.
 - Arquivo exigido: a entrega precisa incluir uma URL. Atividade sem arquivo exigido aceita um comentário; entregas completamente vazias são rejeitadas.
 
 Atividades podem ser associadas a etapas da trilha. Uma entrega válida conclui a etapa correspondente no servidor; essa conclusão não depende de já existir uma nota e não atribui a bonificação dos jogos. A chamada de entrega informa o ID da etapa quando ocorre pela trilha.
@@ -65,27 +66,29 @@ Atividades podem ser associadas a etapas da trilha. Uma entrega válida conclui 
 
 A mesma correção também pode ser feita na lista de envios dentro de uma atividade. O administrador acompanha membros e trainees; o organizador só recebe na fila os envios de trainees em atividades que pode gerenciar; o gerente, os envios de membros do próprio eixo em atividades desse eixo — estar numa atividade do eixo não basta — e os de trainees, como o organizador.
 
-Ao reenviar conteúdo diferente, a correção anterior é retirada, a entrega volta a pendente e a média é recalculada. Repetir a mesma entrega não duplica seu registro nem remove uma correção sem mudança no conteúdo.
+Ao reenviar conteúdo diferente, a entrega volta a pendente, e a melhor nota das entregas anteriores (`previous_grade`) continua valendo na média até a nova correção; vale a maior entre ela e a nova nota. Corrigir de novo a mesma entrega substitui a nota dela, para desfazer um lançamento errado. Repetir a mesma entrega não duplica seu registro nem remove uma correção sem mudança no conteúdo.
 
 ### Cálculo da nota da rotação
 
-A nota é a média ponderada **das entregas já corrigidas** que possuem peso positivo:
+A nota é a média ponderada das **atividades obrigatórias já corrigidas** e dos **jogos obrigatórios concluídos**:
 
 ```text
-média = soma(nota da entrega × peso da atividade) / soma(dos pesos considerados)
+média = soma(nota × peso) / soma(dos pesos considerados)
 ```
 
-Exemplo de cálculo: nota 10 com peso 2 e nota 4 com peso 1 resultam em `(10×2 + 4×1) / 3 = 8,00`.
+A nota de um jogo é `10 × pontos obtidos / pontos possíveis`, de 0 a 10, calculada pelo servidor ao concluir; vale a melhor tentativa. Quizzes antigos sem pesos nas alternativas usam a proporção de acertos.
 
-Entregas pendentes e atividades com peso zero não reduzem a média. Sem notas corrigidas com peso positivo, a média fica ausente (`null`), não zero. O resultado é arredondado para duas casas decimais. Essa regra vale para membros e trainees.
+Exemplo de cálculo: entrega com nota 4 e peso 2, e jogo com nota 10 e peso 3, resultam em `(4×2 + 10×3) / 5 = 7,60`.
 
-O backend recalcula quando uma nota é salva, quando um reenvio retira a nota anterior, quando o peso muda e quando uma atividade é excluída. `users.nota_rotacao` é um cache calculado para manter compatibilidade com as respostas da API, e não um campo de lançamento manual. A rotação/ciclo do trainee (`rotacao`) continua sendo um dado administrativo separado.
+Entregas pendentes e atividades ou jogos opcionais não reduzem a média. Sem notas obrigatórias, a média fica ausente (`null`), não zero. O resultado é arredondado para duas casas decimais. Essa regra vale para membros e trainees; para o gerente, a média exibida considera só as atividades e jogos do eixo dele.
 
-Pontuação de jogos e nota de atividades são medidas diferentes. Os pontos dos jogos não entram na média de rotação.
+O backend recalcula quando uma nota é salva, quando um jogo é concluído, quando o peso ou a obrigatoriedade de uma atividade ou etapa de jogo muda e quando uma atividade ou etapa de jogo é excluída. `users.nota_rotacao` é um cache calculado para manter compatibilidade com as respostas da API, e não um campo de lançamento manual. A rotação/ciclo do trainee (`rotacao`) continua sendo um dado administrativo separado.
+
+O frontend não exibe troféus, pontos acumulados nem bonificações; mostra conclusão, nota e feedback das respostas. Os registros históricos de pontuação (até 100 pontos por etapa) permanecem no servidor e não entram na média: ela usa a nota de 0 a 10 do jogo.
 
 ## Trilhas e acesso ao conteúdo
 
-O fluxo de autoria de conteúdo é **material → atividade → nó**: crie o material na biblioteca, selecione-o na atividade e vincule a atividade ao nó. Materiais também podem existir apenas na biblioteca, sem atividade ou nó. A criação de nós oferece atividade ou versão publicada de jogo; nós antigos de leitura continuam compatíveis. No gerenciamento da trilha é possível vincular ou trocar a atividade de um nó existente. Ao abrir a etapa, `GET /api/nodes/{id}/content` retorna sua atividade, o material dessa atividade (texto, documentos e vídeos) e a entrega do participante, depois de verificar as permissões e o desbloqueio. O leitor não depende da lista de materiais já carregada no navegador. A trilha é sequencial por eixo: a etapa anterior na ordem é o pré-requisito implícito. Quando existe um pré-requisito explícito, ele prevalece. As conexões visuais seguem a regra usada pela API.
+O fluxo de autoria de conteúdo é **material → atividade → nó**: crie o material na biblioteca, selecione-o na atividade e vincule a atividade ao nó. Materiais também podem existir apenas na biblioteca, sem atividade ou nó. A criação de nós oferece atividade ou versão publicada de jogo; nós antigos de leitura continuam compatíveis. No gerenciamento da trilha, **Editar nó** permite alterar nome, conteúdo associado, prazo e pré-requisito. Tipo e eixo são preservados. Pré-requisitos que criariam ciclos são rejeitados. Etapas de jogo podem ter um material de apoio opcional, disponível durante o jogo e na biblioteca somente após o desbloqueio da etapa. A leitura desse material não conclui o jogo. Ao selecionar um jogo, membros e trainees navegam para uma página dedicada (`/trilha/{id}/jogar`), com material de apoio e retorno à trilha. As prévias administrativas ocupam a área da página e permitem voltar ao editor mantendo o rascunho. Uma versão de jogo com tentativas registradas não pode ser substituída no mesmo nó. Ao abrir a etapa, `GET /api/nodes/{id}/content` retorna sua atividade, o material dessa atividade (texto, documentos e vídeos) e a entrega do participante, depois de verificar as permissões e o desbloqueio. O leitor não depende da lista de materiais já carregada no navegador. A trilha é sequencial por eixo: a etapa obrigatória anterior na ordem é o pré-requisito implícito, e etapas opcionais não bloqueiam as seguintes. Quando existe um pré-requisito explícito, ele prevalece. As conexões visuais seguem a regra usada pela API.
 
 O administrador pode liberar etapas imediatamente ou agendar a liberação. Participantes só abrem etapas liberadas e com pré-requisitos concluídos.
 
@@ -128,6 +131,8 @@ Publicações são versões imutáveis. Editar um rascunho e publicar outra vers
 Um rascunho nunca publicado exclui livremente. Um jogo publicado também pode ser excluído, desde que nenhuma versão sua (a atual ou uma anterior) ainda esteja em uso em alguma etapa da trilha; do contrário a etapa perderia o conteúdo. Remova o jogo da etapa (ou a própria etapa) antes de excluir o jogo; a exclusão apaga todas as versões e não pode ser desfeita.
 
 O servidor recebe respostas/decisões e calcula o resultado. Não aceita uma pontuação arbitrária calculada no navegador nem entrega o gabarito antes da avaliação. Os formatos da biblioteca são normalizados para até 100 pontos por etapa; vale o melhor resultado e só a melhora acrescenta pontos à pessoa. Repetir uma requisição de conclusão não pontua novamente.
+
+Com repetição permitida, abrir o jogo concluído começa uma nova tentativa, e o resultado mostra a nota da tentativa e a melhor nota. Sem repetição, a primeira tentativa concluída é definitiva: abrir de novo mostra o resultado, e uma tentativa em andamento quando a repetição for desligada não pode mais ser concluída.
 
 Cenários salvam as decisões no servidor. Os demais formatos mantêm as escolhas em andamento no navegador para retomada da tentativa; a avaliação é enviada ao concluir. Essa retomada local depende do mesmo navegador. Quizzes antigos continuam funcionando pelo fluxo legado de respostas avaliadas no servidor, com os pesos originais.
 
@@ -191,6 +196,7 @@ As migrações rodam na inicialização da API e registram versões em `schema_m
 3. Conversão do antigo conteúdo `pluginfo` para `trainee`. Etapas convertidas são colocadas após as existentes e bloqueadas; o papel organizador é preservado.
 4. Garantia da coluna de peso, backup das notas manuais antigas em `nota_rotacao_backup_v4` e recálculo das médias pelas entregas corrigidas.
 5. Lista de links e tabela de anexos das entregas.
+6. Repetição, obrigatoriedade e peso nas atividades e etapas de jogo, nota de 0 a 10 no progresso dos jogos e melhor nota anterior nas entregas. Atividades com peso 0 passam a opcionais; jogos já concluídos recebem a nota pelo melhor resultado registrado; as médias são recalculadas, com backup em `nota_rotacao_backup_v6`.
 
 O papel de gerente reaproveita as colunas `users.type` e `users.eixo` e não exige migração de dados: nomes de eixo antigos são normalizados na leitura e convertidos para o código na próxima gravação. A tabela `material_uploads` é criada na inicialização como as demais tabelas novas.
 

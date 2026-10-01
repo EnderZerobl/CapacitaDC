@@ -2,21 +2,22 @@
 
 import { useRef, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, Loader2, Star } from "lucide-react"
+import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, Loader2 } from "lucide-react"
 import type { GameAnswer, GameResult, Question } from "@/features/nodes/types"
 
 interface SpinGameProps {
   nodeName: string
+  allowRetry?: boolean
   questions?: Question[]
   onComplete: (answers: GameAnswer[]) => Promise<GameResult>
   onClose: () => void
 }
 
-export function SpinGame({ nodeName, questions = [], onComplete, onClose }: SpinGameProps) {
+export function SpinGame({ nodeName, allowRetry = true, questions = [], onComplete, onClose }: SpinGameProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [result, setResult] = useState<GameResult | null>(null)
@@ -57,27 +58,17 @@ export function SpinGame({ nodeName, questions = [], onComplete, onClose }: Spin
   }
 
   if (result) {
-    const scorePercentage = result.max_score > 0 ? result.attempt_score / result.max_score * 100 : 0
     return (
-      <Card className="w-full max-w-xl mx-auto border-primary/20">
+      <Card className="w-full border-primary/20">
         <CardHeader className="text-center">
-          <Star className="w-12 h-12 mx-auto text-yellow-500 light:text-yellow-600" />
+          <CheckCircle2 className="w-12 h-12 mx-auto text-primary" />
           <CardTitle>Jogo concluído!</CardTitle>
           <p className="text-sm text-muted-foreground">{nodeName}</p>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="text-center">
-            <p className="text-sm text-muted-foreground">Pontuação desta tentativa</p>
-            <p className="text-4xl font-bold text-primary mt-2">
-              {result.attempt_score} <span className="text-lg text-muted-foreground">/ {result.max_score} pts</span>
-            </p>
-            <Badge variant={scorePercentage >= 70 ? "default" : "secondary"} className="mt-3">
-              {scorePercentage >= 90 ? "Ótimo desempenho!" : scorePercentage >= 70 ? "Bom desempenho!" : "Continue praticando!"}
-            </Badge>
-            <p className="text-sm text-muted-foreground mt-3">
-              {result.score_added > 0 ? `${result.score_added} pontos adicionados ao seu total.` : "Seu progresso foi registrado. Esta tentativa não acrescentou pontos ao seu total."}
-            </p>
-          </div>
+          <p className="text-center text-sm text-muted-foreground">Seu progresso foi registrado.</p>
+          {result.grade != null && <p className="text-center text-lg font-semibold">Nota desta tentativa: {result.grade.toFixed(2)} / 10</p>}
+          {result.best_grade != null && <p className="text-center text-sm text-muted-foreground">Melhor nota: {result.best_grade.toFixed(2)} / 10</p>}
           <div className="space-y-3">
             {result.feedback.map((item, index) => {
               const question = questions.find(question => question.id === item.question_id)
@@ -88,7 +79,7 @@ export function SpinGame({ nodeName, questions = [], onComplete, onClose }: Spin
                   <p className="text-muted-foreground">Sua resposta: {option?.text}</p>
                   <p className="flex items-center gap-2 font-medium">
                     {item.is_correct ? <CheckCircle2 className="h-4 w-4 text-emerald-500 light:text-emerald-600" /> : <AlertCircle className="h-4 w-4 text-amber-500 light:text-amber-600" />}
-                    {item.is_correct ? "Resposta correta" : "Revise esta resposta"} · {item.score} pts
+                    {item.is_correct ? "Resposta correta" : "Revise esta resposta"}
                   </p>
                   {item.feedback && <p>{item.feedback}</p>}
                   {item.explanation && item.explanation !== item.feedback && <p className="text-muted-foreground">{item.explanation}</p>}
@@ -96,6 +87,7 @@ export function SpinGame({ nodeName, questions = [], onComplete, onClose }: Spin
               )
             })}
           </div>
+          {allowRetry ? <Button variant="outline" className="w-full" onClick={() => { setResult(null); setAnswers({}); setCurrentIndex(0) }}>Repetir jogo</Button> : <p className="text-sm text-muted-foreground">A repetição deste jogo não está permitida.</p>}
           <Button className="w-full" onClick={onClose}>Voltar à trilha</Button>
         </CardContent>
       </Card>
@@ -104,7 +96,7 @@ export function SpinGame({ nodeName, questions = [], onComplete, onClose }: Spin
 
   const selectedOptionId = answers[currentQuestion.id]
   return (
-    <Card className="w-full max-w-xl mx-auto border-primary/20">
+    <Card className="w-full border-primary/20">
       <CardHeader className="space-y-4">
         <CardTitle>{nodeName}</CardTitle>
         <Badge variant="outline" className="w-fit">Pergunta {currentIndex + 1} de {questions.length}</Badge>

@@ -16,7 +16,8 @@ from app import models, schemas
 from app.auth import get_current_user, get_current_staff
 from app.services import blob_storage, access
 from app.services.roles import STAFF
-from app.services.node_service import blocked_activity_ids
+from app.services.node_service import blocked_activity_ids, lock_user
+from app.services.assessment_service import validate_settings, effective_grade
 from app.services.activity_service import (
     activity_weight, graded_user_ids, is_effectively_open,
     recompute_user_grade, recompute_users_grades, submission_to_out,
@@ -47,6 +48,8 @@ def _submission_activity(db, activity_id, user, node_id=None):
     if not is_effectively_open(activity):
         raise HTTPException(400, "Esta atividade está fechada e não aceita mais envios")
     _submission_nodes(db, activity, user, node_id)
+    if not activity.allow_retry and db.query(models.ActivitySubmission).filter_by(activity_id=activity.id, user_id=user.id).first():
+        raise HTTPException(409, "Esta atividade não permite repetição.")
     return activity
 
 
@@ -241,6 +244,7 @@ def get_activities(
             deadline=act.deadline,
             is_open=act.is_open,
             weight=activity_weight(act),
+            allow_retry=act.allow_retry, is_required=act.is_required,
             created_by=act.created_by,
             created_at=act.created_at,
             material_id=act.material_id,
@@ -269,6 +273,7 @@ def create_activity(
         deadline=activity_in.deadline,
         material_id=activity_in.material_id,
         weight=activity_in.weight if activity_in.weight is not None else 1.0,
+        allow_retry=activity_in.allow_retry, is_required=activity_in.is_required,
         is_open=True,
         created_by=current_user.id,
         created_at=datetime.now(timezone.utc),
@@ -286,6 +291,7 @@ def create_activity(
         deadline=new_activity.deadline,
         is_open=new_activity.is_open,
         weight=new_activity.weight,
+        allow_retry=new_activity.allow_retry, is_required=new_activity.is_required,
         created_by=new_activity.created_by,
         created_at=new_activity.created_at,
         material_id=new_activity.material_id,
@@ -309,7 +315,10 @@ def update_activity(
     access.ensure_contained_in_axis(db, current_user, activity)
     if "material_id" in update_data.model_fields_set:
         _validate_material_link(db, current_user, update_data.material_id)
-    if update_data.weight is not None and update_data.weight != activity.weight:
+    changes = update_data.model_dump(exclude_unset=True)
+    validate_settings(activity, changes)
+    assessment_changed = any(key in changes and changes[key] != getattr(activity, key) for key in ("weight", "is_required"))
+    if assessment_changed:
         access.ensure_no_foreign_submissions(current_user, activity)
 
     if update_data.is_open is not None:
@@ -324,8 +333,11 @@ def update_activity(
         activity.accepts_file = update_data.accepts_file
     if "material_id" in update_data.model_fields_set:
         activity.material_id = update_data.material_id
-    reweighted = update_data.weight is not None and update_data.weight != activity.weight
-    affected = graded_user_ids(db, activity.id) if reweighted else []
+    affected = graded_user_ids(db, activity.id) if assessment_changed else []
+    if update_data.allow_retry is not None:
+        activity.allow_retry = update_data.allow_retry
+    if update_data.is_required is not None:
+        activity.is_required = update_data.is_required
     if update_data.weight is not None:
         activity.weight = update_data.weight
 
@@ -342,6 +354,7 @@ def update_activity(
         deadline=activity.deadline,
         is_open=activity.is_open,
         weight=activity_weight(activity),
+        allow_retry=activity.allow_retry, is_required=activity.is_required,
         created_by=activity.created_by,
         created_at=activity.created_at,
         material_id=activity.material_id,
@@ -421,14 +434,14 @@ def submit_activity(
 
     # Serialize deliveries for the same user, including the first submission and
     # progress record, so concurrent retries cannot create duplicates.
-    current_user = db.query(models.User).filter(
-        models.User.id == current_user.id,
-    ).populate_existing().with_for_update().one()
+    current_user = lock_user(db, current_user.id)
     existing = db.query(models.ActivitySubmission).filter(
         models.ActivitySubmission.activity_id == activity_id,
         models.ActivitySubmission.user_id == current_user.id,
     ).first()
 
+    if existing is not None and not activity.allow_retry:
+        raise HTTPException(409, "Esta atividade não permite repetição.")
     if existing is None:
         existing = models.ActivitySubmission(
             id=str(uuid.uuid4()), activity_id=activity_id, user_id=current_user.id,
@@ -436,6 +449,7 @@ def submit_activity(
         db.add(existing)
     elif (existing.file_url != file_url or existing.comment != comment or (existing.links or []) != links
           or {a.id for a in existing.attachments} != set(attachment_ids)):
+        existing.previous_grade = effective_grade(existing)
         existing.grade = None
         existing.feedback = ""
     existing.attachments = attachments

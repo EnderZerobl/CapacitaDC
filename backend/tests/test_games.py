@@ -29,6 +29,28 @@ class GameTests(unittest.TestCase):
     def tearDown(self):
         self.api.tearDown()
 
+    def test_edit_library_game_keeps_attempt_revision_and_allows_support_material(self):
+        game = self.game(eixo="trainee")
+        replacement = self.game(eixo="trainee")
+        node = self.node(game)
+        path = f"/api/nodes/{node['id']}"
+        status, changed = self.request("PATCH", path, {"game_revision_id": replacement["published_revision"]["id"]})
+        self.assertEqual(status, 200, changed)
+        self.assertEqual(changed["game_revision_id"], replacement["published_revision"]["id"])
+        attempt = self.begin(node, role="trainee")
+        status, error = self.request("PATCH", path, {"game_revision_id": game["published_revision"]["id"]})
+        self.assertEqual(status, 400, error)
+        self.assertIn("tentativas", error["detail"])
+        material = self.create("materials", {"name": "Apoio", "type": "trainee", "eixo": "trainee"})
+        status, updated = self.request("PATCH", path, {"name": "Nome atualizado", "reference_id": material["id"],
+            "game_revision_id": replacement["published_revision"]["id"]})
+        self.assertEqual(status, 200, updated)
+        self.assertEqual(updated["reference_id"], material["id"])
+        content = self.request("GET", path + "/content", role="trainee")[1]
+        self.assertEqual(content["material"]["id"], material["id"])
+        with self.api.sessions() as db:
+            self.assertEqual(db.get(models.GameAttempt, attempt["id"]).game_revision_id, replacement["published_revision"]["id"])
+
     def quiz_config(self):
         return {"questions": [
             {"id": "q1", "text": "Pergunta 1", "selection": "single", "weight": 1, "explanation": "Explicação 1",

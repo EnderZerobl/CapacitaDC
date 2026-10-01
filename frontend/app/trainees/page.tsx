@@ -10,8 +10,6 @@ import { isStaff } from "@/lib/roles"
 import { type ContentItem } from "@/lib/content-data"
 import { ViewContentCard } from "@/components/content/view-content-card"
 import { TrainingPath } from "@/components/dashboard/training-path"
-import { LibraryGame } from "@/components/games/library-game"
-import { SpinGame } from "@/components/games/spin-game"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -29,7 +27,7 @@ import { ActivitySubmissionForm } from "@/components/activities/submission-form"
 import { SubmissionContent } from "@/components/activities/submission-content"
 
 import { useNodes, useNodeContent } from "@/features/nodes/hooks"
-import type { GameAnswer, GameResult } from "@/features/nodes/types"
+import type { TrainingNode } from "@/features/nodes/types"
 import { useActivities } from "@/features/activities/hooks"
 import { useMaterials } from "@/features/materials/hooks"
 
@@ -39,12 +37,11 @@ export default function TraineesPage() {
 
   const { materials, refresh: refreshMaterials } = useMaterials()
   const contents: ContentItem[] = materials as unknown as ContentItem[]
-  const { nodes, completeNode, submitGame, refresh: refreshNodes } = useNodes()
+  const { nodes, completeNode, refresh: refreshNodes } = useNodes()
   const { activities, refresh: refreshActivities } = useActivities()
 
   const [activeTab, setActiveTab] = useState("trilha")
   const [selectedNode, setSelectedNode] = useState<any | null>(null)
-  const [isPlayingGame, setIsPlayingGame] = useState(false)
   const [isReadingMaterial, setIsReadingMaterial] = useState(false)
   const { content: nodeContent, loading: contentLoading, error: contentError, refresh: refreshNodeContent } = useNodeContent(
     isReadingMaterial ? selectedNode?.id ?? null : null
@@ -69,19 +66,13 @@ export default function TraineesPage() {
 
   const handleLogout = () => { logout(); router.push("/login") }
 
-  const handleSelectNode = (node: any) => {
-    setSelectedNode(node)
-    if (node.type === "game") setIsPlayingGame(true)
-    else {
-      setIsReadingMaterial(true)
+  const handleSelectNode = (node: Pick<TrainingNode, "id" | "type">) => {
+    if (node.type === "game") {
+      router.push(`/trilha/${encodeURIComponent(node.id)}/jogar`)
+      return
     }
-  }
-
-  const handleGameComplete = async (answers: GameAnswer[]): Promise<GameResult> => {
-    if (!selectedNode) throw new Error("Selecione um jogo na trilha para continuar.")
-    const result = await submitGame(selectedNode.id, answers)
-    await refreshProgress()
-    return result
+    setSelectedNode(node)
+    setIsReadingMaterial(true)
   }
 
   const handleCompleteMaterial = async () => {
@@ -129,9 +120,6 @@ export default function TraineesPage() {
                   <Badge variant="outline" className="text-amber-400 light:text-amber-700 border-amber-400/30">
                     Trainee
                   </Badge>
-                  <Badge variant="outline" className="text-xs font-semibold">
-                    🏆 {user.pontos_acumulados} pts
-                  </Badge>
                 </div>
               )}
               <ThemeToggle />
@@ -168,12 +156,6 @@ export default function TraineesPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-4 self-stretch sm:self-auto bg-card p-3 rounded-xl border border-border justify-around sm:justify-start">
-              <div className="text-center px-4">
-                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Pontos Totais</span>
-                <p className="text-lg font-black text-primary mt-0.5">{user?.pontos_acumulados ?? 0} pts</p>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -454,7 +436,7 @@ export default function TraineesPage() {
                     ) : null}
 
                     {/* If open and not submitted, show the inputs */}
-                    {relatedActivity.effective_open && !relatedActivity.my_submission && (
+                    {relatedActivity.effective_open && (
                       <ActivitySubmissionForm activity={relatedActivity} nodeId={selectedNode.id}
                         onSubmitted={async () => {
                           await refreshActivities()
@@ -490,34 +472,6 @@ export default function TraineesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: Jogar Game */}
-      <Dialog open={isPlayingGame} onOpenChange={setIsPlayingGame}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card border-border p-0">
-          <DialogHeader className="sr-only">
-            <DialogTitle>{selectedNode?.name || "Questionário"}</DialogTitle>
-            <DialogDescription>Jogo da etapa selecionada na trilha.</DialogDescription>
-          </DialogHeader>
-          {selectedNode && isPlayingGame && (
-            <div className="p-6">
-              {selectedNode.game_revision_id ? (
-                <LibraryGame nodeId={selectedNode.id}
-                  onCompleted={async () => { await refreshProgress(); setIsPlayingGame(false); setSelectedNode(null) }}
-                  onClose={() => { setIsPlayingGame(false); setSelectedNode(null) }} />
-              ) : (
-              <SpinGame
-                nodeName={selectedNode.name}
-                questions={selectedNode.questions}
-                onComplete={handleGameComplete}
-                onClose={() => {
-                  setIsPlayingGame(false)
-                  setSelectedNode(null)
-                }}
-              />
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </main>
   )
 }

@@ -78,13 +78,13 @@ class GradingTests(unittest.TestCase):
         self.deliver(pending)
         self.assertEqual(self.grade_of('trainee'), 10.0)
 
-    def test_resubmission_clears_the_grade_and_recomputes(self):
+    def test_resubmission_clears_current_grade_but_preserves_best_in_average(self):
         first, second = self.activity(), self.activity()
         self.grade(first, self.deliver(first), 10)
         self.grade(second, self.deliver(second), 4)
         self.assertEqual(self.grade_of('trainee'), 7.0)
         self.deliver(second, comment='Entrega revisada')
-        self.assertEqual(self.grade_of('trainee'), 10.0)
+        self.assertEqual(self.grade_of('trainee'), 7.0)
 
     def test_weight_change_recomputes_everyone_graded_on_the_activity(self):
         heavy, light = self.activity(weight=1), self.activity(weight=1)
@@ -212,13 +212,13 @@ class GradingTests(unittest.TestCase):
         self.assertEqual(len(self.queue()), 3)
 
     def test_zero_weight_is_preserved_and_excluded_from_average(self):
-        practice, graded = self.activity(weight=0), self.activity(weight=2)
+        practice, graded = self.activity(weight=0, is_required=False), self.activity(weight=2)
         self.assertEqual(practice['weight'], 0)
         self.grade(practice, self.deliver(practice), 10)
         self.assertIsNone(self.grade_of('trainee'))
         self.grade(graded, self.deliver(graded), 6)
         self.assertEqual(self.grade_of('trainee'), 6)
-        status, _ = self.request('PATCH', f"/api/activities/{graded['id']}", {'weight': 0})
+        status, _ = self.request('PATCH', f"/api/activities/{graded['id']}", {'weight': 0, 'is_required': False})
         self.assertEqual(status, 200)
         self.assertIsNone(self.grade_of('trainee'))
         for weight in [-1, 'NaN', 'Infinity']:

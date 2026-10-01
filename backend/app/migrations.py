@@ -136,3 +136,55 @@ def migrate(engine):
                 connection.execute(text("ALTER TABLE activity_submissions ADD COLUMN links JSON"))
             connection.execute(text("UPDATE activity_submissions SET links = '[]' WHERE links IS NULL"))
             connection.execute(text("INSERT INTO schema_migrations(version) VALUES (5)"))
+
+        if 6 not in applied:
+            from collections import defaultdict
+            from app.services.activity_service import weighted_average
+            from app.services.assessment_service import normalized_grade
+
+            connection.execute(text("CREATE TABLE IF NOT EXISTS nota_rotacao_backup_v6 AS SELECT id, nota_rotacao FROM users"))
+            additions = {
+                "activities": {"allow_retry": "BOOLEAN NOT NULL DEFAULT TRUE", "is_required": "BOOLEAN NOT NULL DEFAULT TRUE"},
+                "training_nodes": {"allow_retry": "BOOLEAN NOT NULL DEFAULT TRUE", "is_required": "BOOLEAN NOT NULL DEFAULT TRUE", "weight": "FLOAT NOT NULL DEFAULT 1.0"},
+                "user_node_progress": {"grade": "FLOAT"},
+                "activity_submissions": {"previous_grade": "FLOAT"},
+            }
+            for table, fields in additions.items():
+                columns = {column["name"] for column in inspect(connection).get_columns(table)}
+                for name, definition in fields.items():
+                    if name not in columns:
+                        connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {definition}"))
+            # Peso zero já representava prática sem participação na média.
+            connection.execute(text("UPDATE activities SET is_required = FALSE WHERE weight <= 0"))
+            legacy_maximum = defaultdict(float)
+            for node_id, maximum in connection.execute(text(
+                "SELECT q.node_id, MAX(o.score) FROM questions q JOIN options o ON o.question_id = q.id GROUP BY q.id, q.node_id"
+            )):
+                legacy_maximum[node_id] += max(0, maximum or 0)
+            for progress in connection.execute(text(
+                "SELECT p.id, p.node_id, p.score, n.game_revision_id, r.max_points FROM user_node_progress p "
+                "JOIN training_nodes n ON n.id = p.node_id LEFT JOIN game_revisions r ON r.id = n.game_revision_id "
+                "WHERE n.type = 'game' AND p.completed = TRUE AND p.grade IS NULL"
+            )).mappings().all():
+                maximum = progress["max_points"] or 0 if progress["game_revision_id"] else legacy_maximum[progress["node_id"]]
+                if maximum > 0:
+                    connection.execute(text("UPDATE user_node_progress SET grade = :grade WHERE id = :id"),
+                                       {"id": progress["id"], "grade": normalized_grade(progress["score"], maximum)})
+            pairs = defaultdict(list)
+            for user_id, grade, previous_grade, weight in connection.execute(text(
+                "SELECT s.user_id, s.grade, s.previous_grade, a.weight FROM activity_submissions s "
+                "JOIN activities a ON a.id = s.activity_id WHERE a.is_required = TRUE"
+            )):
+                best = max((value for value in (grade, previous_grade) if value is not None), default=None)
+                if best is not None:
+                    pairs[user_id].append((best, weight))
+            for user_id, grade, weight in connection.execute(text(
+                "SELECT p.user_id, p.grade, n.weight FROM user_node_progress p JOIN training_nodes n ON n.id = p.node_id "
+                "WHERE n.type = 'game' AND n.is_required = TRUE AND p.completed = TRUE AND p.grade IS NOT NULL"
+            )):
+                pairs[user_id].append((grade, weight))
+            connection.execute(text("UPDATE users SET nota_rotacao = NULL"))
+            for user_id, graded in pairs.items():
+                connection.execute(text("UPDATE users SET nota_rotacao = :grade WHERE id = :id"),
+                                   {"id": user_id, "grade": weighted_average(graded)})
+            connection.execute(text("INSERT INTO schema_migrations(version) VALUES (6)"))

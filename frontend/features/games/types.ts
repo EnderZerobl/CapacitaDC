@@ -171,6 +171,8 @@ export interface ScenarioAnswer {
 }
 
 export interface GameResult {
+  grade?: number
+  best_grade?: number
   attempt_score: number
   max_score: number
   score_added: number

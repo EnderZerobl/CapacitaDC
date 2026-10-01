@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { gamesApi } from "@/features/games/api"
 import { gameFormatLabels, newGame } from "@/features/games/drafts"
 import { publicationIssues } from "@/features/games/validation"
@@ -17,7 +16,7 @@ import { ScenarioEditor } from "./scenario-editor"
 import { MatchingEditor } from "./matching-editor"
 import { OrderingEditor } from "./ordering-editor"
 import { CategorizationEditor } from "./categorization-editor"
-import { GamePreview } from "./game-preview"
+import { GamePreviewScreen } from "./game-preview-screen"
 
 export interface GameAxis { value: string; label: string }
 
@@ -80,6 +79,8 @@ export function GameEditor({ game, format, axes, onChanged, onClose }: { game: G
   }
   const close = () => { if (!dirty || window.confirm("Há alterações não salvas. Descartar estas alterações e fechar o editor?")) onClose() }
 
+  if (preview) return <GamePreviewScreen draft={draft} onClose={() => setPreview(false)} backLabel="Voltar ao editor" />
+
   return <section className="rounded-xl border bg-card p-4 sm:p-6" aria-label="Editor de jogo">
     <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
       <div><h2 className="text-xl font-semibold">{savedGame ? "Editar jogo" : "Novo jogo"}</h2><p className="mt-1 text-sm text-muted-foreground">{gameFormatLabels[draft.format]}</p></div>
@@ -110,6 +111,5 @@ export function GameEditor({ game, format, axes, onChanged, onClose }: { game: G
         <Button variant="ghost" disabled={busy} onClick={close}>Fechar editor</Button>
       </div>
     </div>
-    <Dialog open={preview} onOpenChange={setPreview}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Pré-visualizar jogo</DialogTitle><DialogDescription>Teste o conteúdo atual do rascunho.</DialogDescription></DialogHeader><GamePreview draft={draft} /></DialogContent></Dialog>
   </section>
 }
