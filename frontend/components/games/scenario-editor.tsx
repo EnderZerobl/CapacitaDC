@@ -15,7 +15,7 @@ export function ScenarioEditor({ config, onChange }: { config: ScenarioConfig; o
     steps: config.steps.filter(step => step.id !== id).map(step => ({ ...step, options: step.options.map(option => option.next_step_id === id ? { ...option, next_step_id: null } : option) })),
   })
   return <div className="space-y-5">
-    <p className="text-sm text-muted-foreground">Cada decisão pode encerrar o jogo ou levar a outro passo. Todos os passos precisam ser alcançáveis, sem ciclos. A nota compara os pontos do caminho percorrido com o melhor caminho possível, em uma escala de 0 a 100.</p>
+    <p className="text-sm text-muted-foreground">Cada decisão pode encerrar o jogo ou levar a outro passo. Todos os passos precisam ser alcançáveis, sem ciclos. A nota compara os pontos do caminho percorrido com o melhor caminho possível, em uma escala de 0 a 10.</p>
     <EditorField label="Passo inicial"><select className={editorSelectClass} value={config.start_step_id} onChange={event => onChange({ ...config, start_step_id: event.target.value })}><option value="">Selecione o início</option>{config.steps.map((step, index) => <option key={step.id} value={step.id}>Passo {index + 1}{step.text ? ` — ${step.text.slice(0, 55)}` : ""}</option>)}</select></EditorField>
     {config.steps.map((step, index) => <section key={step.id} className="space-y-4 rounded-lg border p-4" aria-label={`Passo ${index + 1}`}>
       <div className="flex items-center justify-between"><h3 className="font-semibold">Passo {index + 1}</h3><Button type="button" variant="ghost" size="icon" aria-label={`Excluir passo ${index + 1}`} onClick={() => remove(step.id)}><Trash2 className="size-4" /></Button></div>

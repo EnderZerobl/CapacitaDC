@@ -1,7 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import Link from "next/link"
+import { GameLibrary } from "@/components/games/game-library"
+import { AssessmentSettings } from "@/components/activities/assessment-settings"
+import { NodeEditDialog } from "@/components/dashboard/node-edit-dialog"
 import { gamesApi } from "@/features/games/api"
 import { gameFormatLabels } from "@/features/games/drafts"
 import type { Game } from "@/features/games/types"
@@ -76,14 +78,17 @@ function DashboardContent() {
   // Edit activity state
   const [editActivityId, setEditActivityId] = useState<string | null>(null)
   const [editActivityForm, setEditActivityForm] = useState({
-    title: "", description: "", eixo: defaultEixo, accepts_file: true, deadline: "", material_id: "", weight: 1,
+    title: "", description: "", eixo: defaultEixo, accepts_file: true, deadline: "", material_id: "", weight: 1, allow_retry: true, is_required: true,
   })
 
   // Local UI state
   const [showActivityForm, setShowActivityForm] = useState(false)
   const [newActivityForm, setNewActivityForm] = useState({
-    title: "", description: "", eixo: defaultEixo, accepts_file: true, deadline: "", material_id: "", weight: 1,
+    title: "", description: "", eixo: defaultEixo, accepts_file: true, deadline: "", material_id: "", weight: 1, allow_retry: true, is_required: true,
   })
+  const [editingNode, setEditingNode] = useState<TrainingNode | null>(null)
+  const [activeTab, setActiveTab] = useState("usuarios")
+  const [activityTab, setActivityTab] = useState("entregas")
   const [showNodeForm, setShowNodeForm] = useState(false)
   const [games, setGames] = useState<Game[]>([])
   const [gameRevisionId, setGameRevisionId] = useState("")
@@ -91,12 +96,12 @@ function DashboardContent() {
   const [nodeError, setNodeError] = useState("")
   const [creatingNode, setCreatingNode] = useState(false)
   useEffect(() => {
-    if (!showNodeForm || !user || !isStaff(user.type)) return
+    if (!showNodeForm || activeTab !== "trilha" || !user || !isStaff(user.type)) return
     gamesApi.list().then(setGames).catch(error => setNodeError(error.message))
-  }, [showNodeForm, user?.id])
+  }, [showNodeForm, activeTab, user?.id])
   const [nodeForm, setNodeForm] = useState({
     name: "", type: "activity" as "activity" | "game", eixo: defaultEixo,
-    activity_id: "", reference_id: "", deadline: "", is_released: false,
+    activity_id: "", reference_id: "", deadline: "", is_released: false, allow_retry: true, is_required: true, weight: 1,
     questions: [] as Array<{ text: string; explanation: string; options: Array<{ text: string; is_correct: boolean; score: number; feedback: string }> }>,
   })
 
@@ -162,11 +167,12 @@ function DashboardContent() {
     const payload: any = {
       name: nodeForm.name.trim() || null, type: nodeForm.type, eixo: nodeForm.eixo,
       activity_id: nodeForm.type === "activity" ? (nodeForm.activity_id || null) : null,
-      reference_id: null,
+      reference_id: nodeForm.type === "game" ? nodeForm.reference_id || null : null,
       deadline: deadlineIso, is_released: nodeForm.is_released,
       game_revision_id: nodeForm.type === "game" ? gameRevisionId : null,
       prerequisite_node_id: prerequisiteId || null,
       questions: [],
+      ...(nodeForm.type === "game" ? { allow_retry: nodeForm.allow_retry, is_required: nodeForm.is_required, weight: nodeForm.weight } : {}),
     }
     try {
       await apiClient.post("/api/nodes", payload)
@@ -174,7 +180,7 @@ function DashboardContent() {
       setShowNodeForm(false)
       setGameRevisionId("")
       setPrerequisiteId("")
-      setNodeForm({ name: "", type: "activity", eixo: defaultEixo, activity_id: "", reference_id: "", deadline: "", is_released: false, questions: [] })
+      setNodeForm({ name: "", type: "activity", eixo: defaultEixo, activity_id: "", reference_id: "", deadline: "", is_released: false, allow_retry: true, is_required: true, weight: 1, questions: [] })
     } catch (error) {
       setNodeError(error instanceof Error ? error.message : "Erro ao criar etapa")
     } finally {
@@ -202,8 +208,9 @@ function DashboardContent() {
         eixo: newActivityForm.eixo, accepts_file: newActivityForm.accepts_file,
         deadline: newActivityForm.deadline ? new Date(newActivityForm.deadline).toISOString() : null,
         material_id: newActivityForm.material_id || null, weight: Number(newActivityForm.weight),
+        allow_retry: newActivityForm.allow_retry, is_required: newActivityForm.is_required,
       })
-      setNewActivityForm({ title: "", description: "", eixo: defaultEixo, accepts_file: true, deadline: "", material_id: "", weight: 1 })
+      setNewActivityForm({ title: "", description: "", eixo: defaultEixo, accepts_file: true, deadline: "", material_id: "", weight: 1, allow_retry: true, is_required: true })
       setShowActivityForm(false)
     } catch (e: any) { alert(e.message || "Erro ao criar atividade") }
   }
@@ -221,7 +228,7 @@ function DashboardContent() {
       accepts_file: act.accepts_file,
       deadline: act.deadline ? new Date(act.deadline).toISOString().slice(0, 16) : "",
       material_id: act.material_id || "",
-      weight: act.weight ?? 1,
+      weight: act.weight ?? 1, allow_retry: act.allow_retry !== false, is_required: act.is_required !== false,
     })
   }
 
@@ -235,6 +242,7 @@ function DashboardContent() {
         deadline: editActivityForm.deadline ? new Date(editActivityForm.deadline).toISOString() : null,
         material_id: editActivityForm.material_id || null,
         weight: Number(editActivityForm.weight),
+        allow_retry: editActivityForm.allow_retry, is_required: editActivityForm.is_required,
       })
       setEditActivityId(null)
       await refreshUsers()
@@ -319,9 +327,10 @@ function DashboardContent() {
         </div>
       </header>
 
+      {editingNode && <NodeEditDialog key={editingNode.id} node={editingNode} nodes={nodes} activities={activities} materials={materials} onClose={() => setEditingNode(null)} onSaved={refreshNodes} />}
       {/* Content */}
       <div className="container mx-auto px-4 py-8">
-        <Tabs defaultValue="usuarios" className="space-y-8">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
           <TabsList className="bg-card border border-border flex-wrap h-auto gap-1">
             <TabsTrigger value="usuarios" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Users className="h-4 w-4" />
@@ -378,6 +387,10 @@ function DashboardContent() {
 
           {/* Seção Atividades */}
           <TabsContent value="atividades" className="space-y-6">
+            <Tabs value={activityTab} onValueChange={setActivityTab} className="space-y-6">
+              <TabsList><TabsTrigger value="entregas">Entregas</TabsTrigger><TabsTrigger value="jogos"><Gamepad2 className="mr-2 size-4" />Jogos</TabsTrigger></TabsList>
+              <TabsContent value="jogos"><GameLibrary isOrganizer={isOrg} managerAxis={axis} /></TabsContent>
+              <TabsContent value="entregas" className="space-y-6">
             <div className="flex items-start justify-between">
               <div className="space-y-1">
                 <h2 className="text-2xl font-bold text-foreground">Atividades</h2>
@@ -456,20 +469,7 @@ function DashboardContent() {
                         }
                       </select>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Scale className="h-3 w-3" /> Peso (Média Ponderada)
-                      </label>
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        value={newActivityForm.weight}
-                        onChange={e => setNewActivityForm(p => ({ ...p, weight: Number(e.target.value) }))}
-                        className="bg-secondary border-border text-xs h-9"
-                      />
-                      <p className="text-xs text-muted-foreground">Peso 0: não vale nota na média. Peso maior: maior participação na média.</p>
-                    </div>
+                    <div className="sm:col-span-2"><AssessmentSettings value={newActivityForm} onChange={settings => setNewActivityForm(previous => ({ ...previous, ...settings }))} /></div>
                     <div className="flex items-center gap-3 pt-6">
                       <input
                         type="checkbox"
@@ -515,7 +515,7 @@ function DashboardContent() {
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
-                          <CardTitle className="text-sm font-bold text-foreground flex items-center gap-2">
+                          <CardTitle className="text-sm font-bold text-foreground flex flex-wrap items-center gap-2">
                             {act.title}
                             {isOpen ? (
                               <Badge className="bg-emerald-500/10 text-emerald-400 light:text-emerald-700 border-emerald-500/30 text-[9px]">Aberta</Badge>
@@ -527,7 +527,8 @@ function DashboardContent() {
                                 <Upload className="h-2.5 w-2.5 mr-0.5" />Arquivo
                               </Badge>
                             )}
-
+                            <Badge variant="outline" className="text-[9px]">{act.is_required === false ? "Opcional" : `Peso ${act.weight ?? 1}`}</Badge>
+                            {act.allow_retry === false && <Badge variant="outline" className="text-[9px]">Envio único</Badge>}
                           </CardTitle>
                           {act.description && (
                             <p className="text-xs text-muted-foreground mt-1">{act.description}</p>
@@ -599,16 +600,7 @@ function DashboardContent() {
                                 className="bg-secondary border-border text-xs h-8"
                               />
                             </div>
-                            <div className="space-y-1">
-                              <label className="text-xs text-muted-foreground flex items-center gap-1"><Scale className="h-3 w-3" /> Peso</label>
-                              <Input
-                                type="number" min="0" step="0.5"
-                                value={editActivityForm.weight}
-                                onChange={e => setEditActivityForm(p => ({ ...p, weight: Number(e.target.value) }))}
-                                className="bg-secondary border-border text-xs h-8"
-                              />
-                      <p className="text-xs text-muted-foreground">Peso 0: não vale nota na média. Peso maior: maior participação na média.</p>
-                            </div>
+                            <div className="sm:col-span-2"><AssessmentSettings value={editActivityForm} onChange={settings => setEditActivityForm(previous => ({ ...previous, ...settings }))} /></div>
                             <div className="space-y-1">
                               <label className="text-xs text-muted-foreground">Material Relacionado</label>
                               <select
@@ -677,6 +669,8 @@ function DashboardContent() {
               </div>
               ))}
             </div>
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
           {/* Seção Correções — fila única de envios */}
@@ -684,7 +678,7 @@ function DashboardContent() {
             <div className="space-y-1">
               <h2 className="text-2xl font-bold text-foreground">Correções</h2>
               <p className="text-muted-foreground text-sm">
-                Todos os envios em uma fila, pendentes primeiro. A nota entra na média ponderada da pessoa assim que você salva.
+                Todos os envios em uma fila, pendentes primeiro. Nas atividades obrigatórias, a melhor nota entra na média ponderada assim que você salva.
               </p>
             </div>
             <CorrectionsQueue activities={activities} isOrganizer={isOrg} managerAxis={axis} onGraded={() => { void refreshUsers() }} />
@@ -692,6 +686,7 @@ function DashboardContent() {
 
           {/* Seção Notas */}
           <TabsContent value="notas" className="space-y-8">
+            <p className="text-sm text-muted-foreground">A média reúne as melhores notas das atividades e dos jogos obrigatórios, conforme seus pesos. Ela é parcial enquanto houver entregas aguardando correção ou jogos por concluir.</p>
             <div className="space-y-1">
               <h2 className="text-2xl font-bold text-foreground">Planilha de Notas</h2>
               <p className="text-muted-foreground text-sm">
@@ -719,7 +714,6 @@ function DashboardContent() {
                           <th className="text-center p-3 font-semibold text-muted-foreground">Trilha %</th>
                           <th className="text-center p-3 font-semibold text-muted-foreground">Atividades</th>
                           <th className="text-center p-3 font-semibold text-muted-foreground">Média Ponderada</th>
-                          <th className="text-center p-3 font-semibold text-muted-foreground">Pontos</th>
                           <th className="p-3" />
                         </tr>
                       </thead>
@@ -746,7 +740,6 @@ function DashboardContent() {
                                 : <span className="text-muted-foreground/40">—</span>
                               }
                             </td>
-                            <td className="p-3 text-center text-primary font-semibold">{row.pontos_acumulados}</td>
                             <td className="p-3 text-right">
                               <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2 text-primary" onClick={() => window.open(`/perfil/${row.id}`)}>
                                 <ExternalLink className="h-3 w-3" />
@@ -777,7 +770,6 @@ function DashboardContent() {
                           <th className="text-center p-3 font-semibold text-muted-foreground">Trilha %</th>
                           <th className="text-center p-3 font-semibold text-muted-foreground">Atividades</th>
                           <th className="text-center p-3 font-semibold text-muted-foreground">Média Ponderada</th>
-                          <th className="text-center p-3 font-semibold text-muted-foreground">Pontos</th>
                           <th className="p-3" />
                         </tr>
                       </thead>
@@ -800,7 +792,6 @@ function DashboardContent() {
                                 ? <span className={`font-bold ${row.nota_rotacao >= 7 ? "text-emerald-400 light:text-emerald-700" : row.nota_rotacao >= 5 ? "text-amber-400 light:text-amber-700" : "text-rose-400 light:text-rose-700"}`}>{row.nota_rotacao.toFixed(2)}</span>
                                 : <span className="text-muted-foreground/40">—</span>}
                             </td>
-                            <td className="p-3 text-center text-primary font-semibold">{row.pontos_acumulados}</td>
                             <td className="p-3 text-right">
                               <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2 text-primary" onClick={() => window.open(`/perfil/${row.id}`)}>
                                 <ExternalLink className="h-3 w-3" />
@@ -842,9 +833,6 @@ function DashboardContent() {
                 <h2 className="text-2xl font-bold text-foreground">Gerenciamento da Trilha</h2>
                 <p className="text-muted-foreground text-sm">Crie o material na biblioteca, vincule-o a uma atividade e selecione a atividade no nó.</p>
               </div>
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/jogos"><Gamepad2 className="h-4 w-4 mr-2" />Biblioteca de jogos</Link>
-              </Button>
               <Button size="sm" className="gap-2" onClick={() => setShowNodeForm(v => !v)}>
                 <Plus className="h-4 w-4" />Novo Nó
               </Button>
@@ -935,15 +923,24 @@ function DashboardContent() {
                         <select id="node-game" value={gameRevisionId} onChange={e => setGameRevisionId(e.target.value)}
                           className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-sm">
                           <option value="">Selecione um jogo...</option>
-                          {games.filter(game => game.published_revision && (game.eixo === nodeForm.eixo || game.eixo === "all")).map(game => (
+                          {games.filter(game => game.published_revision && game.eixo === nodeForm.eixo).map(game => (
                             <option key={game.id} value={game.published_revision!.id}>
                               {game.published_revision!.title} — {gameFormatLabels[game.format]} (v{game.published_revision!.version})
                             </option>
                           ))}
                         </select>
-                        <p className="text-xs text-muted-foreground">Publique o jogo na <Link href="/jogos" className="underline">biblioteca de jogos</Link> para adicioná-lo à trilha.</p>
+                        <p className="text-xs text-muted-foreground">Publique o jogo na <button type="button" className="underline" onClick={() => { setActiveTab("atividades"); setActivityTab("jogos") }}>aba Atividades → Jogos</button> para adicioná-lo à trilha.</p>
                       </div>
                     )}
+                    {nodeForm.type === "game" && <div className="sm:col-span-2"><AssessmentSettings value={nodeForm} onChange={settings => setNodeForm(previous => ({ ...previous, ...settings }))} /></div>}
+                    {nodeForm.type === "game" && <div className="sm:col-span-2 space-y-2">
+                      <Label htmlFor="node-material">Material de apoio (opcional)</Label>
+                      <select id="node-material" value={nodeForm.reference_id} onChange={event => setNodeForm(previous => ({ ...previous, reference_id: event.target.value }))}
+                        className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-sm">
+                        <option value="">Sem material</option>
+                        {materials.filter(material => material.eixo === nodeForm.eixo || material.eixo === "all").map(material => <option key={material.id} value={material.id}>{material.name}</option>)}
+                      </select>
+                    </div>}
                     <div className="sm:col-span-2 space-y-2">
                       <Label htmlFor="node-prerequisite">Pré-requisito</Label>
                       <select id="node-prerequisite" value={prerequisiteId} onChange={e => setPrerequisiteId(e.target.value)}
@@ -1016,6 +1013,11 @@ function DashboardContent() {
                                     <CardTitle className="text-sm font-semibold text-foreground truncate">
                                       {node.name}
                                     </CardTitle>
+                                    {node.type !== "material" && (
+                                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                                        {node.is_required === false ? "Opcional" : `Obrigatória · peso ${node.weight ?? 1}`} · {node.allow_retry === false ? "Sem repetição" : "Repetição permitida"}
+                                      </p>
+                                    )}
                                     {node.deadline && (
                                       <p className="text-[10px] text-amber-400 light:text-amber-700 flex items-center gap-1 mt-0.5 font-medium">
                                         <Clock className="h-3 w-3" /> Prazo: {new Date(node.deadline).toLocaleString("pt-BR")}
@@ -1050,6 +1052,7 @@ function DashboardContent() {
                               </div>
                             </CardHeader>
                             <CardContent className="space-y-4">
+                              <Button size="sm" variant="outline" onClick={() => setEditingNode(node)}><Pencil className="mr-2 size-4" />Editar nó</Button>
                               {node.type !== "game" && <NodeActivityLink
                                 key={`${node.id}-${node.activity_id || "none"}`}
                                 node={node} activities={activities} materials={materials} onSaved={refreshNodes} />}

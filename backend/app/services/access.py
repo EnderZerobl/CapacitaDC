@@ -115,21 +115,49 @@ def ensure_material_access(user: models.User, material, *, manage: bool = False)
             raise HTTPException(status_code=403, detail="Você não pode gerenciar conteúdo deste eixo.")
 
 
+def is_required_step(node: models.TrainingNode) -> bool:
+    """Etapa de atividade segue a atividade vinculada; as demais, a própria etapa."""
+    subject = node.activity if node.type == "activity" and node.activity else node
+    return bool(getattr(subject, "is_required", True))
+
+
+def chain_of(nodes) -> dict:
+    """Pré-requisito efetivo de cada etapa: o escolhido à mão ou a obrigatória anterior do eixo.
+
+    Recebe as etapas já ordenadas por (order_index, id). Etapas opcionais não
+    seguram a corrente: a seguinte depende da última obrigatória antes delas.
+    """
+    previous, last_of_eixo = {}, {}
+    for node in nodes:
+        previous[node.id] = node.prerequisite_node_id or last_of_eixo.get(node.eixo)
+        if is_required_step(node):
+            last_of_eixo[node.eixo] = node.id
+    return previous
+
+
+def has_cycle(chain: dict) -> bool:
+    """Se seguir os pré-requisitos a partir de alguma etapa volta a ela mesma."""
+    for start in chain:
+        seen, cursor = set(), start
+        while cursor:
+            if cursor in seen:
+                return True
+            seen.add(cursor)
+            cursor = chain.get(cursor)
+    return False
+
 def effective_prerequisite_id(db: Session, node: models.TrainingNode) -> str | None:
-    """A trilha é uma sequência: a etapa anterior do mesmo eixo é o pré-requisito.
+    """A trilha é uma sequência: a etapa obrigatória anterior do mesmo eixo é o pré-requisito.
 
     Um pré-requisito escolhido à mão continua valendo e se sobrepõe ao implícito.
     Derivar da ordem faz a corrente se refazer sozinha ao reordenar as etapas.
     """
     if node.prerequisite_node_id:
         return node.prerequisite_node_id
-    ordered = [
-        row[0] for row in db.query(models.TrainingNode.id).filter(
-            models.TrainingNode.eixo == node.eixo,
-        ).order_by(models.TrainingNode.order_index, models.TrainingNode.id).all()
-    ]
-    position = ordered.index(node.id) if node.id in ordered else 0
-    return ordered[position - 1] if position > 0 else None
+    ordered = db.query(models.TrainingNode).filter(
+        models.TrainingNode.eixo == node.eixo,
+    ).order_by(models.TrainingNode.order_index, models.TrainingNode.id).all()
+    return chain_of(ordered).get(node.id)
 
 
 def ensure_node_access(

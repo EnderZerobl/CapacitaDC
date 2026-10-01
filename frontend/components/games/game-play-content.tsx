@@ -27,12 +27,12 @@ export function GameResultView({ result, preview = false }: { result: GameResult
   return <div className="space-y-5">
     <div className="rounded-xl bg-primary/5 p-5 text-center">
       <h3 className="text-lg font-semibold">{preview ? "Resultado da prévia" : "Jogo concluído"}</h3>
-      <p className="mt-2 text-3xl font-bold text-primary">{result.attempt_score} <span className="text-base font-normal text-muted-foreground">/ {result.max_score} pontos</span></p>
-      {!preview && <p className="mt-2 text-sm text-muted-foreground">Melhor resultado nesta etapa: {result.total_score}. Pontos adicionados: {result.score_added}.</p>}
+      {(result.grade != null || preview) && <p className="mt-2 text-2xl font-bold text-primary">Nota: {(result.grade ?? (result.max_score ? 10 * result.attempt_score / result.max_score : 0)).toFixed(2)} / 10</p>}
+      {!preview && result.best_grade != null && <p className="mt-2 text-sm text-muted-foreground">Melhor nota: {result.best_grade.toFixed(2)} / 10</p>}
     </div>
     {result.note && <p className="whitespace-pre-wrap rounded-lg border p-4 text-sm">{result.note}</p>}
     <div className="space-y-3">{result.feedback.map((item, index) => <section key={item.question_id || item.step_id || item.item_id || index} className="space-y-2 rounded-lg border p-4">
-      <div className="flex items-start justify-between gap-4"><p className="whitespace-pre-wrap text-sm font-medium">{item.text}</p><span className="shrink-0 text-sm text-muted-foreground">{item.score} / {item.max_score}</span></div>
+      <div className="flex items-start justify-between gap-4"><p className="whitespace-pre-wrap text-sm font-medium">{item.text}</p></div>
       {typeof item.is_correct === "boolean" && <p className={`text-sm font-medium ${item.is_correct ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}`}>{item.is_correct ? "Resposta correta" : "Revise sua resposta"}</p>}
       {item.feedback && <p className="whitespace-pre-wrap text-sm">{item.feedback}</p>}
       {item.explanation && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{item.explanation}</p>}

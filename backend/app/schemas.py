@@ -119,13 +119,28 @@ class QuestionOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class AssessmentSettings(BaseModel):
+    allow_retry: bool = True
+    is_required: bool = True
+    weight: float = Field(default=1.0, ge=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def required_weight(self):
+        if self.is_required and self.weight <= 0:
+            raise ValueError("Atividades e jogos obrigatórios precisam de peso maior que zero")
+        return self
+
+
 class TrainingNodeOut(BaseModel):
     id: str
     name: str
     type: str  # "activity", "material", "game"
     reference_id: Optional[str] = None
     game_revision_id: Optional[str] = None
-    game_format: Optional[Literal["quiz", "scenario"]] = None
+    game_format: Optional[Literal["quiz", "scenario", "matching", "ordering", "categorization"]] = None
+    allow_retry: bool = True
+    is_required: bool = True
+    weight: float = 1.0
     activity_id: Optional[str] = None
     eixo: str
     prerequisite_node_id: Optional[str] = None
@@ -146,9 +161,30 @@ class TrainingNodeGraphOut(TrainingNodeOut):
     completed: bool = False
     unlocked: bool = True
     user_score: int = 0
+    grade: Optional[float] = None
 
 class NodeActivityUpdate(BaseModel):
     activity_id: str = Field(min_length=1)
+
+
+class TrainingNodeUpdate(BaseModel):
+    allow_retry: Optional[bool] = None
+    is_required: Optional[bool] = None
+    weight: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    name: Optional[str] = Field(default=None, min_length=1)
+    activity_id: Optional[str] = None
+    reference_id: Optional[str] = None
+    game_revision_id: Optional[str] = None
+    prerequisite_node_id: Optional[str] = None
+    deadline: Optional[datetime] = None
+
+    @model_validator(mode="after")
+    def assessment_not_null(self):
+        if any(field in self.model_fields_set and getattr(self, field) is None
+               for field in ("allow_retry", "is_required", "weight")):
+            raise ValueError("Repetição, obrigatoriedade e peso não podem ser nulos")
+        return self
 
 
 class NodeReleaseUpdate(BaseModel):
@@ -174,7 +210,7 @@ class QuestionCreate(BaseModel):
             raise ValueError("Cada pergunta precisa de pelo menos uma alternativa correta")
         return self
 
-class TrainingNodeCreate(BaseModel):
+class TrainingNodeCreate(AssessmentSettings):
     name: Optional[str] = None
     type: Literal["activity", "material", "game"]
     eixo: Literal["trainee", "vendas", "conexoes", "experiencia", "all"]
@@ -193,8 +229,8 @@ class TrainingNodeCreate(BaseModel):
                 raise ValueError("Selecione um jogo publicado ou adicione perguntas")
             if self.questions and self.game_revision_id:
                 raise ValueError("Selecione um jogo publicado ou perguntas, sem misturar os formatos")
-            if self.activity_id or self.reference_id:
-                raise ValueError("Jogos não podem vincular uma atividade ou material")
+            if self.activity_id:
+                raise ValueError("Jogos não podem vincular uma atividade de entrega")
         elif self.type == "material" and not self.reference_id:
             raise ValueError("Selecione o material da etapa")
         elif self.type == "activity" and not (self.activity_id or self.reference_id):
@@ -216,7 +252,7 @@ class GameSubmitRequest(BaseModel):
 
 # --- Activity & Submission Schemas ---
 
-class ActivityCreate(BaseModel):
+class ActivityCreate(AssessmentSettings):
     title: str
     description: Optional[str] = ""
     eixo: str  # "trainee", "vendas", "conexoes", "experiencia", "all"
@@ -226,6 +262,8 @@ class ActivityCreate(BaseModel):
     weight: float = Field(default=1.0, ge=0, allow_inf_nan=False)
 
 class ActivityUpdate(BaseModel):
+    allow_retry: Optional[bool] = None
+    is_required: Optional[bool] = None
     is_open: Optional[bool] = None
     deadline: Optional[datetime] = None
     title: Optional[str] = None
@@ -233,6 +271,13 @@ class ActivityUpdate(BaseModel):
     accepts_file: Optional[bool] = None
     material_id: Optional[str] = None
     weight: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    @model_validator(mode="after")
+    def assessment_not_null(self):
+        if any(field in self.model_fields_set and getattr(self, field) is None
+               for field in ("allow_retry", "is_required", "weight")):
+            raise ValueError("Repetição, obrigatoriedade e peso não podem ser nulos")
+        return self
+
 
 class SubmissionAttachmentOut(BaseModel):
     id: str
@@ -269,6 +314,8 @@ class ActivitySubmissionOut(BaseModel):
     comment: Optional[str] = ""
     submitted_at: Optional[datetime] = None
     grade: Optional[float] = None
+    previous_grade: Optional[float] = None
+    effective_grade: Optional[float] = None
     feedback: Optional[str] = ""
     user_name: Optional[str] = None      # populated from join
     user_type: Optional[str] = None      # trainee ou membro, para a fila de correção
@@ -287,6 +334,8 @@ class ActivityOut(BaseModel):
     deadline: Optional[datetime] = None
     is_open: bool
     weight: float = 1.0
+    allow_retry: bool = True
+    is_required: bool = True
     created_by: Optional[str] = None
     created_at: Optional[datetime] = None
     material_id: Optional[str] = None
@@ -337,6 +386,9 @@ class NodeProgressOut(BaseModel):
     node_type: str
     completed: bool
     score: int
+    grade: Optional[float] = None
+    weight: float = 1.0
+    is_required: bool = True
     completed_at: Optional[datetime] = None
 
 class UserProfileOut(BaseModel):

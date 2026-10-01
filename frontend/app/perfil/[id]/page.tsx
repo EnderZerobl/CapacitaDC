@@ -22,6 +22,9 @@ interface NodeProgress {
   node_type: string
   completed: boolean
   score: number
+  grade?: number | null
+  weight?: number
+  is_required?: boolean
   completed_at?: string | null
 }
 
@@ -35,6 +38,8 @@ interface ActivitySubmission {
   comment?: string
   submitted_at?: string | null
   grade?: number | null
+  previous_grade?: number | null
+  effective_grade?: number | null
   feedback?: string
   user_name?: string
   activity_title?: string | null
@@ -158,10 +163,6 @@ export default function PerfilPage() {
                 {(profile.type === "trainee" || profile.type === "membro") && (
                 <div className="flex flex-wrap gap-6 mt-4">
                   <div className="text-center">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider">Pontos</p>
-                    <p className="text-lg font-black text-primary">{profile.pontos_acumulados}</p>
-                  </div>
-                  <div className="text-center">
                     <p className="text-xs text-muted-foreground uppercase tracking-wider">Trilha</p>
                     <p className="text-lg font-black text-foreground">{pct}%</p>
                   </div>
@@ -216,9 +217,7 @@ export default function PerfilPage() {
                       </Badge>
                     </div>
                     <div className="flex items-center gap-2 text-xs">
-                      {np.completed && np.score > 0 && (
-                        <span className="text-primary font-semibold">+{np.score} pts</span>
-                      )}
+                      {np.node_type === "game" && np.grade != null && <span className="font-semibold">Nota: {np.grade.toFixed(2)} / 10 · {np.is_required === false ? "opcional" : `peso ${np.weight ?? 1}`}</span>}
                       {np.completed && np.completed_at && (
                         <span className="text-muted-foreground/60 text-[10px]">
                           {new Date(np.completed_at).toLocaleDateString("pt-BR")}

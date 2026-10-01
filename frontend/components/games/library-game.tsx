@@ -12,6 +12,7 @@ import { GameResultView, QuizChoices, ScenarioChoices } from "./game-play-conten
 
 interface LibraryGameProps {
   nodeId: string
+  allowRetry?: boolean
   onCompleted: (result: GameResult) => Promise<void>
   onClose: () => void
 }
@@ -21,7 +22,7 @@ const finishLabels: Record<string, string> = {
   ordering: "Concluir ordenação", categorization: "Concluir classificação",
 }
 
-export function LibraryGame({ nodeId, onCompleted, onClose }: LibraryGameProps) {
+export function LibraryGame({ nodeId, allowRetry = true, onCompleted, onClose }: LibraryGameProps) {
   const [attempt, setAttempt] = useState<GameAttempt | null>(null)
   const [draft, setDraft] = useState<AttemptDraft>(emptyDraft)
   const [busy, setBusy] = useState(true)
@@ -77,7 +78,7 @@ export function LibraryGame({ nodeId, onCompleted, onClose }: LibraryGameProps) 
   }
 
   const ready = !!attempt && isComplete(attempt, draft)
-  return <Card className="mx-auto w-full max-w-2xl">
+  return <Card className="w-full">
     <CardHeader><CardTitle>{attempt?.title || "Carregando jogo"}</CardTitle>{attempt?.instructions && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{attempt.instructions}</p>}</CardHeader>
     <CardContent className="space-y-5">
       {error && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
@@ -85,9 +86,10 @@ export function LibraryGame({ nodeId, onCompleted, onClose }: LibraryGameProps) 
       {!attempt && !busy && <Button onClick={() => setRetry(value => value + 1)}>Tentar novamente</Button>}
       {attempt?.result ? <>
         <GameResultView result={attempt.result} />
+        {allowRetry ? <Button variant="outline" disabled={busy} onClick={() => setRetry(value => value + 1)}>Repetir jogo</Button> : <p className="text-sm text-muted-foreground">A repetição deste jogo não está permitida.</p>}
         <Button disabled={busy} className="w-full" onClick={() => void perform(() => onCompleted(attempt.result!))}>{busy ? "Atualizando trilha…" : "Voltar à trilha"}</Button>
       </> : attempt && <>
-        <p className="text-sm text-muted-foreground">O resultado e o feedback serão exibidos ao concluir. Vale o melhor resultado nesta etapa, até {attempt.max_score} pontos.</p>
+        <p className="text-sm text-muted-foreground">O feedback das suas respostas será exibido ao concluir.</p>
         {attempt.format === "quiz" && <QuizChoices questions={attempt.questions || []} answers={draft.answers} disabled={busy} onChange={(questionId, optionIds) => changeDraft({ answers: { ...draft.answers, [questionId]: optionIds } })} />}
         {attempt.format === "matching" && attempt.board && <MatchingBoard board={attempt.board} value={draft.selection} disabled={busy} onChange={(leftId, rightId) => changeDraft({ selection: { ...draft.selection, [leftId]: rightId } })} />}
         {attempt.format === "ordering" && <OrderingBoard items={arrangement} disabled={busy} onChange={items => changeDraft({ order: items.map(item => item.id) })} />}

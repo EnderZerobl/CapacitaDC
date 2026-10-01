@@ -131,6 +131,7 @@ class BoardGameTests(unittest.TestCase):
                 self.assertEqual(status, 200, result)
                 self.assertEqual(result["result"]["attempt_score"], partial_score)
                 self.assertEqual(result["result"]["max_score"], 100)
+                self.assertEqual(result["result"]["grade"], 5 if fmt == "ordering" else 6.67)
                 self.assertEqual(result["result"]["score_added"], partial_score)
                 self.assertIsNone(result["board"])
                 wrong = [item for item in result["result"]["feedback"] if not item["is_correct"]]

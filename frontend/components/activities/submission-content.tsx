@@ -22,6 +22,7 @@ export function SubmissionContent({ submission }: { submission: ActivitySubmissi
   }
   const links = [...new Set([...(submission.links || []), ...(submission.file_url ? [submission.file_url] : [])])]
   return <div className="space-y-2">
+    {submission.previous_grade != null && <p className="text-xs font-medium">Melhor nota: {(submission.effective_grade ?? submission.previous_grade).toFixed(2)} / 10{submission.grade == null ? " · nova entrega aguardando correção" : ""}</p>}
     {(submission.attachments || []).map(attachment => <button key={attachment.id} type="button"
       onClick={() => void download(attachment)} className="flex max-w-full items-center gap-2 text-left text-xs text-primary hover:underline">
       <FileDown className="size-4 shrink-0" /><span className="break-all">{attachment.name}</span>

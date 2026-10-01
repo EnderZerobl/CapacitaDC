@@ -158,6 +158,8 @@ async function checkActivitySubmission(browser, type) {
     await page.getByRole("button", { name: node.name, exact: true }).click()
     await dialog.getByText("✓ Atividade Enviada", { exact: true }).waitFor()
     assert.equal(await dialog.getByRole("button", { name: /Concluir etapa|Já concluído/i }).count(), 0)
+    // Repetição permitida por padrão: a etapa já concluída oferece só a atualização do envio.
+    await dialog.getByRole("button", { name: "Atualizar envio", exact: true }).waitFor()
     console.log(`PASS ${type}: atividade sem material, erro/reenvio e conclusão pelo node_id`)
   } finally {
     await context.close()
@@ -314,6 +316,47 @@ async function checkManagerRoutes(browser) {
   console.log("PASS papéis: gestores voltam ao painel ao acessar páginas de participantes")
 }
 
+async function checkLegacyGamePage(browser, role) {
+  let completed = false
+  let submissions = 0
+  const node = { id: "legacy-game", name: "Questionário da trilha", type: "game", eixo: role === "trainee" ? "trainee" : "vendas",
+    is_released: true, unlocked: true, completed: false, user_score: 0, questions: [
+      { id: "question", text: "Como iniciar?", options: [{ id: "yes", text: "Ouvir a pessoa" }, { id: "no", text: "Ignorar a pessoa" }] },
+    ] }
+  const { page, context } = await authenticatedPage(browser, { ...admin, type: role, eixo: "vendas" }, async (route, pathname, request) => {
+    if (pathname === "/api/nodes") { await fulfill(route, 200, [{ ...node, completed }]); return true }
+    if (pathname === "/api/nodes/legacy-game/submit-game") {
+      assert.deepEqual(request.postDataJSON(), { answers: [{ question_id: "question", option_id: "yes" }] })
+      completed = true
+      submissions++
+      await fulfill(route, 200, { feedback: [{ question_id: "question", option_id: "yes", is_correct: true, explanation: "A escuta orienta a conversa." }] })
+      return true
+    }
+    return false
+  })
+  try {
+    const home = role === "trainee" ? "/trainees" : "/membros"
+    await page.goto(`${baseURL}${home}`)
+    await page.getByRole("button", { name: node.name, exact: true }).click()
+    await page.waitForURL("**/trilha/legacy-game/jogar")
+    await page.getByRole("button", { name: "Ouvir a pessoa", exact: true }).click()
+    await page.getByRole("button", { name: "Concluir e ver resultado", exact: true }).click()
+    await page.getByText("Jogo concluído!", { exact: true }).waitFor()
+    await page.getByText("A escuta orienta a conversa.", { exact: true }).waitFor()
+    assert.equal(await page.getByRole("dialog").count(), 0)
+    assert.equal(submissions, 1)
+    await page.getByRole("button", { name: "Voltar à trilha", exact: true }).click()
+    await page.waitForURL(`**${home}`)
+    node.unlocked = false
+    await page.goto(`${baseURL}/trilha/legacy-game/jogar`)
+    await page.getByRole("heading", { name: "Este jogo ainda está bloqueado." }).waitFor()
+    assert.equal(await page.getByRole("button", { name: "Ouvir a pessoa" }).count(), 0)
+    await page.goto(`${baseURL}/trilha/missing/jogar`)
+    await page.getByRole("heading", { name: "Jogo não encontrado nesta trilha." }).waitFor()
+    console.log(`PASS página de jogo ${role}: navegação, quiz antigo, resultado, retorno, bloqueio e ID ausente`)
+  } finally { await context.close() }
+}
+
 async function main() {
   const browser = await playwright.chromium.launch({ headless: true })
   try {
@@ -327,7 +370,9 @@ async function main() {
     await checkRecovery(browser)
     await checkManagerRoutes(browser)
     await checkNodeActivityLink(browser)
-    console.log("10 cenários de estabilização passaram.")
+    await checkLegacyGamePage(browser, "membro")
+    await checkLegacyGamePage(browser, "trainee")
+    console.log("12 cenários de estabilização passaram.")
   } finally {
     await browser.close()
   }

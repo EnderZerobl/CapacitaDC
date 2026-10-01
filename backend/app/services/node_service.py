@@ -11,7 +11,7 @@ from sqlalchemy import update
 from fastapi import HTTPException
 
 from app import models, schemas
-from app.services.access import allowed_node_eixos
+from app.services.access import allowed_node_eixos, chain_of
 from app.services.roles import STAFF
 
 
@@ -38,18 +38,6 @@ def is_effectively_released(node: models.TrainingNode) -> bool:
 # ---------------------------------------------------------------------------
 # Query / listing
 # ---------------------------------------------------------------------------
-
-def chain_of(nodes) -> dict:
-    """Pré-requisito efetivo de cada etapa: o escolhido à mão ou a anterior do eixo.
-
-    Recebe as etapas já ordenadas por (order_index, id).
-    """
-    previous, last_of_eixo = {}, {}
-    for node in nodes:
-        previous[node.id] = node.prerequisite_node_id or last_of_eixo.get(node.eixo)
-        last_of_eixo[node.eixo] = node.id
-    return previous
-
 
 def unlock_map(db: Session, current_user, nodes) -> dict:
     """Quais etapas estão abertas para a pessoa: liberação mais a corrente.
@@ -88,7 +76,7 @@ def open_content_ids(db: Session, current_user) -> tuple[set, set]:
         query = query.filter(models.TrainingNode.eixo.in_(allowed))
     nodes = query.order_by(models.TrainingNode.order_index, models.TrainingNode.id).all()
     unlocked = unlock_map(db, current_user, nodes)
-    reached = [node for node in nodes if unlocked[node.id] and node.type != "game"]
+    reached = [node for node in nodes if unlocked[node.id]]
     activity_ids = {node.activity_id or node.reference_id for node in reached
                     if node.type == "activity" or node.activity_id} - {None}
     activities = {
@@ -175,12 +163,13 @@ def list_nodes_for_user(
         result.append(node_to_out(
             node, completed=completed, unlocked=unlocked, user_score=user_score,
             include_answers=is_privileged, effective_prerequisite_id=prerequisite_id,
+            grade=node_progress.grade if node_progress else None,
         ))
     return result
 
 
 def node_to_out(node, *, completed=False, unlocked=True, user_score=0, include_answers=True,
-                effective_prerequisite_id=None):
+                effective_prerequisite_id=None, grade=None):
     """Use the same contract for list/create/release/order without losing metadata."""
     result = schemas.TrainingNodeGraphOut.model_validate(node)
     result.game_format = node.game_revision.format if node.game_revision else None
@@ -188,6 +177,11 @@ def node_to_out(node, *, completed=False, unlocked=True, user_score=0, include_a
     result.completed = completed
     result.unlocked = unlocked
     result.user_score = user_score
+    result.grade = grade
+    if node.type == "activity" and node.activity:
+        result.allow_retry = node.activity.allow_retry
+        result.is_required = node.activity.is_required
+        result.weight = node.activity.weight
     if not include_answers:
         if not unlocked:
             result.questions = []
@@ -290,6 +284,8 @@ def submit_game_score(
         models.UserNodeProgress.node_id == node.id,
     ).first()
 
+    if progress and progress.completed and not node.allow_retry:
+        raise HTTPException(409, "Este jogo não permite repetição.")
     score_added = 0
     if not progress:
         progress = models.UserNodeProgress(
@@ -312,9 +308,17 @@ def submit_game_score(
             progress.completed = True
             progress.completed_at = datetime.now(timezone.utc)
 
+    from app.services.assessment_service import normalized_grade
+    from app.services.activity_service import recompute_user_grade
+    # Quizzes antigos sem pesos ainda recebem nota pela proporção de acertos.
+    grade = normalized_grade(score, max_score) if max_score else normalized_grade(
+        sum(item["is_correct"] for item in feedback), len(feedback))
+    progress.grade = max(progress.grade if progress.grade is not None else 0, grade)
+    recompute_user_grade(db, current_user.id)
     db.commit()
     return {
-        "detail": "Pontuação registrada com sucesso",
+        "detail": "Nota registrada com sucesso",
+        "grade": grade, "best_grade": progress.grade,
         "attempt_score": score,
         "max_score": max_score,
         "feedback": feedback,

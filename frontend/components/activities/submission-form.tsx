@@ -56,7 +56,9 @@ export function ActivitySubmissionForm({ activity, nodeId, onSubmitted }: {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível enviar a atividade.") }
     finally { setSubmitting(false) }
   }
+  if (initial && activity.allow_retry === false) return <p role="status" className="text-sm text-muted-foreground">Atividade já enviada. A repetição não está permitida.</p>
   return <div className="space-y-4">
+    <p className="text-xs text-muted-foreground">{activity.is_required === false ? "Opcional · não entra na média" : `Obrigatória · peso ${activity.weight ?? 1}`} · {activity.allow_retry === false ? "Envio único" : "Repetição permitida · vale a melhor nota"}</p>
     <div className="space-y-2">
       <Label htmlFor={`${id}-files`}>Anexos {activity.accepts_file ? "(obrigatório)" : "(opcional)"}</Label>
       <Input id={`${id}-files`} type="file" multiple disabled={busy || attachments.length >= 5}
@@ -84,6 +86,6 @@ export function ActivitySubmissionForm({ activity, nodeId, onSubmitted }: {
     </div>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <Button type="button" className="w-full gap-2" disabled={busy || (activity.accepts_file && !attachments.length) || (!attachments.length && !links.trim() && !comment.trim())}
-      onClick={() => void submit()}><Upload className="size-4" />{submitting ? "Enviando..." : nodeId ? "Enviar atividade e concluir etapa" : initial ? "Atualizar envio" : "Enviar atividade"}</Button>
+      onClick={() => void submit()}><Upload className="size-4" />{submitting ? "Enviando..." : initial ? "Atualizar envio" : nodeId ? "Enviar atividade e concluir etapa" : "Enviar atividade"}</Button>
   </div>
 }

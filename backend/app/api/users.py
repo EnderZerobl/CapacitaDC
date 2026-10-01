@@ -241,7 +241,7 @@ def get_user_profile(
                     node_name=node.name,
                     node_type=node.type,
                     completed=p.completed,
-                    score=p.score,
+                    score=p.score, grade=p.grade, weight=node.weight, is_required=node.is_required,
                     completed_at=p.completed_at,
                 )
             )
@@ -263,7 +263,8 @@ def get_user_profile(
             attachments=sub.attachments,
             comment=sub.comment,
             submitted_at=sub.submitted_at,
-            grade=sub.grade,
+            grade=sub.grade, previous_grade=sub.previous_grade,
+            effective_grade=max((value for value in (sub.grade, sub.previous_grade) if value is not None), default=None),
             feedback=sub.feedback,
             user_name=target.name,
         )

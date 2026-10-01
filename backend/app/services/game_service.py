@@ -101,7 +101,10 @@ def _attempt_for_user(db, attempt_id, user, *, lock=False):
         raise HTTPException(404, "Tentativa não encontrada")
     if attempt.user_id != user.id:
         raise HTTPException(403, "Esta tentativa pertence a outro participante")
-    _node_for_attempt(db, attempt.node_id, user)
+    node = _node_for_attempt(db, attempt.node_id, user)
+    if lock and attempt.status != "completed" and not node.allow_retry:
+        if db.query(models.GameAttempt).filter_by(user_id=user.id, node_id=node.id, status="completed").first():
+            raise HTTPException(409, "Este jogo não permite repetição.")
     return attempt, user
 
 
@@ -150,6 +153,11 @@ def attempt_to_out(attempt):
     quiz = revision.format == "quiz"
     scenario = revision.format == "scenario"
     step = _scenario_step(attempt) if scenario and attempt.status != "completed" else None
+    result = deepcopy(attempt.result) if attempt.status == "completed" else None
+    if result:
+        from app.services.assessment_service import normalized_grade
+        result.setdefault("grade", normalized_grade(result["attempt_score"], result["max_score"]))
+        result["best_grade"] = next((progress.grade for progress in attempt.node.progress if progress.user_id == attempt.user_id), result["grade"])
     return {
         "id": attempt.id, "node_id": attempt.node_id,
         "game_revision_id": revision.id, "status": attempt.status,
@@ -160,13 +168,17 @@ def attempt_to_out(attempt):
         "board": _board(attempt) if attempt.status != "completed" else None,
         "answers": attempt.answers,
         "can_finish": attempt.status == "in_progress" and (not scenario or step is None),
-        "result": attempt.result if attempt.status == "completed" else None,
+        "result": result,
     }
 
 
 def begin_attempt(db, node_id, user):
     user = lock_progress_user(db, user)
     node = _node_for_attempt(db, node_id, user)
+    if not node.allow_retry:
+        completed = db.query(models.GameAttempt).filter_by(user_id=user.id, node_id=node.id, status="completed").order_by(models.GameAttempt.completed_at.desc()).first()
+        if completed:
+            return attempt_to_out(completed)
     key = f"{user.id}:{node.id}"
     attempt = db.query(models.GameAttempt).filter(models.GameAttempt.active_key == key).first()
     if attempt is None:
@@ -359,11 +371,17 @@ def complete_attempt(db: Session, attempt_id, user, payload):
     attempt.status = "completed"
     attempt.active_key = None
     attempt.completed_at = datetime.now(timezone.utc)
+    from app.services.assessment_service import normalized_grade
+    from app.services.activity_service import recompute_user_grade
+    grade = normalized_grade(score, maximum)
+    progress.grade = max(progress.grade if progress.grade is not None else 0, grade)
     attempt.result = {
+        "grade": grade, "best_grade": progress.grade,
         "attempt_score": normalized, "max_score": attempt.revision.max_points,
         "score_added": delta, "total_score": progress.score,
         "user_total_points": user.pontos_acumulados, "note": note, "feedback": feedback,
     }
+    recompute_user_grade(db, user.id)
     db.commit()
     db.refresh(attempt)
     return attempt_to_out(attempt)

@@ -77,6 +77,20 @@ BASE_URL=http://127.0.0.1:3017 ADMIN_EMAIL=admin@example.com \
 
 Percorre autoria, pré-visualização, publicação, vínculo com a trilha, liberação, jogo e atualização do progresso. Também confere a exclusão do jogo: recusada com a mensagem do servidor enquanto duas etapas o usam, liberada depois de removê-las (mesmo já havendo uma tentativa concluída).
 
+## Repetição, obrigatoriedade e peso
+
+Com uma API descartável nova (a média esperada considera só as notas criadas pelo roteiro):
+
+```bash
+BASE_URL=http://127.0.0.1:3017 ADMIN_EMAIL=admin@example.com \
+  TRAINEE_EMAIL=trainee@example.com PASSWORD=qa-test-password \
+  node frontend/tests/assessments_journey.cjs
+```
+
+O administrador cria pela interface uma etapa de jogo sem repetição, obrigatória e com peso 3, e uma atividade de envio único com peso 2. O trainee joga (nota 10/10), não vê opção de repetir e reencontra o resultado ao recarregar; entrega a atividade e não recebe novo formulário. Com a entrega corrigida com nota 4, a aba **Notas** mostra a média 7,60. O administrador libera a repetição em **Editar nó**; uma tentativa pior mostra a melhor nota e mantém a média. A página do jogo é conferida na largura de celular.
+
+`test_assessments.py` cobre também a melhor nota entre reenvios e a correção da nota atual, recálculo ao mudar peso, obrigatoriedade ou excluir a etapa, etapas opcionais fora da média e sem bloquear a seguinte, validação de peso, tentativa em andamento quando a repetição é desligada, quizzes antigos, média do gerente por eixo e a migração 6.
+
 ## Entregas com anexos
 
 Com uma API descartável nova e o frontend conectado a ela:
