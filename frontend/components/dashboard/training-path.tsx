@@ -3,6 +3,7 @@
 import { BookOpen, ClipboardList, Gamepad2, Lock, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { asUtcDate } from "@/lib/datetime"
 
 interface Question {
   id: string
@@ -41,12 +42,6 @@ interface TrainingPathProps {
   onSelectNode: (node: TrainingNode) => void
   highlighted?: boolean
   axisName?: string
-}
-
-/** Datas chegam em UTC sem sufixo; sem o 'Z' o navegador as lê como hora local. */
-function asUtcDate(value: string): Date {
-  const hasTimezone = value.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(value)
-  return new Date(hasTimezone ? value : `${value}Z`)
 }
 
 const CONTAINER_WIDTH = 300
@@ -148,6 +143,9 @@ export function TrainingPath({ nodes, onSelectNode, highlighted = false, axisNam
                     <p className="text-xs font-bold">{node.name}</p>
                     {node.type === "game" && node.completed && (
                       <p className="mt-1 text-[10px] font-semibold text-emerald-400 light:text-emerald-700">{node.grade != null ? `Nota: ${node.grade.toFixed(2)} / 10` : "Concluído"}</p>
+                    )}
+                    {node.type === "game" && node.unlocked && !node.completed && node.grade != null && (
+                      <p className="mt-1 text-[10px] font-semibold text-amber-400 light:text-amber-700">Melhor nota: {node.grade.toFixed(2)} / 10 · tire 7 ou mais para avançar</p>
                     )}
                     {node.type === "material" && node.completed && (
                       <p className="mt-1 text-[10px] font-semibold text-emerald-400 light:text-emerald-700">Lido</p>

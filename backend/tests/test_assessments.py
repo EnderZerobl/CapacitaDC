@@ -167,6 +167,67 @@ class AssessmentTests(unittest.TestCase):
             self.assertEqual(self.request('PATCH', path, {'is_required': False, 'weight': 0})[0], 200)
             self.assertEqual(self.request('PATCH', path, {'is_required': True})[0], 422)
 
+    def weighted_game(self, **settings):
+        # Weights 69/1/30 reach exactly 6.9 and 7.0 without rounding.
+        questions = [{'id': key, 'text': key, 'weight': weight, 'options': [
+            {'id': f'{key}-yes', 'text': 'Certa', 'is_correct': True}, {'id': f'{key}-no', 'text': 'Errada'}]}
+            for key, weight in [('a', 69), ('b', 1), ('c', 30)]]
+        game = self.create('games', {'title': 'Pesos', 'eixo': 'trainee', 'format': 'quiz', 'config': {'questions': questions}})
+        status, game = self.request('POST', f"/api/games/{game['id']}/publish", {})
+        self.assertEqual(status, 200, game)
+        return self.create('nodes', {'type': 'game', 'eixo': 'trainee', 'game_revision_id': game['published_revision']['id'], 'is_released': True, **settings})
+
+    def finish_with(self, node, right):
+        attempt = self.begin(node)
+        status, result = self.request('POST', f"/api/game-attempts/{attempt['id']}/complete", {'answers': [
+            {'question_id': key, 'option_ids': [f"{key}-{'yes' if key in right else 'no'}"]} for key in 'abc']}, role='trainee')
+        self.assertEqual(status, 200, result)
+        return result
+
+    def unlocked(self, node):
+        _, nodes = self.request('GET', '/api/nodes', role='trainee')
+        return next(item for item in nodes if item['id'] == node['id'])['unlocked']
+
+    def test_repeatable_game_needs_minimum_grade_to_conclude_step(self):
+        game, following = self.weighted_game(), self.game()
+        failed = self.finish_with(game, 'a')
+        self.assertEqual(failed['result']['grade'], 6.9)
+        self.assertEqual((failed['result']['min_grade'], failed['result']['step_completed']), (7, False))
+        self.assertFalse(self.unlocked(following))
+        self.assertEqual(self.request('GET', f"/api/nodes/{following['id']}/content", role='trainee')[0], 403)
+        # The best grade still counts in the average while the step stays open.
+        self.assertEqual(self.average(), 6.9)
+        passed = self.finish_with(game, 'ab')
+        self.assertEqual((passed['result']['grade'], passed['result']['step_completed']), (7, True))
+        self.assertTrue(self.unlocked(following))
+        # A later lower attempt never reopens the step; the old result shows the current state.
+        worse = self.finish_with(game, '')
+        self.assertEqual((worse['result']['grade'], worse['result']['best_grade'], worse['result']['step_completed']), (0, 7, True))
+        status, old = self.request('GET', f"/api/game-attempts/{failed['id']}", role='trainee')
+        self.assertEqual(status, 200, old)
+        self.assertTrue(old['result']['step_completed'])
+        self.assertEqual(self.average(), 7)
+
+    def test_single_attempt_game_concludes_with_any_grade(self):
+        game, following = self.weighted_game(allow_retry=False), self.game()
+        result = self.finish_with(game, '')
+        self.assertEqual(result['result']['grade'], 0)
+        self.assertEqual((result['result']['min_grade'], result['result']['step_completed']), (None, True))
+        self.assertTrue(self.unlocked(following))
+
+    def test_repeatable_legacy_quiz_needs_minimum_grade(self):
+        node = self.create('nodes', {'type': 'game', 'eixo': 'trainee', 'is_released': True,
+            'questions': [{'text': 'Pergunta', 'options': [{'text': 'Sim', 'is_correct': True, 'score': 10}, {'text': 'Não'}]}]})
+        following = self.game()
+        question = node['questions'][0]
+        path = f"/api/nodes/{node['id']}/submit-game"
+        for option, grade, completed in [(1, 0, False), (0, 10, True)]:
+            status, result = self.request('POST', path, {'answers': [
+                {'question_id': question['id'], 'option_id': question['options'][option]['id']}]}, role='trainee')
+            self.assertEqual(status, 200, result)
+            self.assertEqual((result['grade'], result['min_grade'], result['step_completed']), (grade, 7, completed))
+            self.assertEqual(self.unlocked(following), completed)
+
     def test_legacy_quiz_without_point_weights_gets_grade_and_cannot_repeat(self):
         node = self.create('nodes', {'type': 'game', 'eixo': 'trainee', 'is_released': True, 'allow_retry': False,
             'questions': [{'text': 'Pergunta', 'options': [{'text': 'Sim', 'is_correct': True}, {'text': 'Não'}]}]})

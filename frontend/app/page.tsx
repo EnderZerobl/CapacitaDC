@@ -32,7 +32,8 @@ import {
   XCircle, Award, Calculator, Scale, Pencil,
 } from "lucide-react"
 
-import { useNodes, utcToLocalInput } from "@/features/nodes/hooks"
+import { useNodes } from "@/features/nodes/hooks"
+import { asUtcDate, utcToLocalInput } from "@/lib/datetime"
 import { useActivities } from "@/features/activities/hooks"
 import { useUsers } from "@/features/users/hooks"
 import { useMaterials } from "@/features/materials/hooks"
@@ -68,7 +69,11 @@ function DashboardContent() {
 
   const { members, trainees, grades, refresh: refreshUsers, createUser, updateUser, deleteUser, updateTrainee } = useUsers()
 
-  const { nodes, nodeReleaseState, setNodeReleaseState, updateReleaseLocal, saveNodeRelease, moveNode, deleteNode, refresh: refreshNodes } = useNodes()
+  const { nodes, nodeReleaseState, savingNodeIds, updateReleaseLocal, saveNodeRelease, moveNode, deleteNode, refresh: refreshNodes } = useNodes()
+  const [releaseTimeZone, setReleaseTimeZone] = useState("")
+  useEffect(() => {
+    setReleaseTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone)
+  }, [])
 
   const {
     activities, activitySubmissions, expandedActivity,
@@ -226,7 +231,7 @@ function DashboardContent() {
       description: act.description || "",
       eixo: act.eixo,
       accepts_file: act.accepts_file,
-      deadline: act.deadline ? new Date(act.deadline).toISOString().slice(0, 16) : "",
+      deadline: act.deadline ? utcToLocalInput(act.deadline) : "",
       material_id: act.material_id || "",
       weight: act.weight ?? 1, allow_retry: act.allow_retry !== false, is_required: act.is_required !== false,
     })
@@ -269,7 +274,7 @@ function DashboardContent() {
   function getNodeStatus(node: TrainingNode) {
     if (!node.is_released) return { label: "Bloqueado", color: "text-rose-400 light:text-rose-700 border-rose-500/30", icon: Lock }
     if (node.released_at) {
-      const releaseDate = new Date(node.released_at)
+      const releaseDate = asUtcDate(node.released_at)
       if (releaseDate > new Date()) return { label: `Agendado`, color: "text-amber-400 light:text-amber-700 border-amber-500/30", icon: Clock }
     }
     return { label: "Liberado", color: "text-emerald-400 light:text-emerald-700 border-emerald-500/30", icon: CheckCircle2 }
@@ -536,7 +541,7 @@ function DashboardContent() {
                           {act.deadline && (
                             <p className="text-[10px] text-amber-400 light:text-amber-700 flex items-center gap-1 mt-1">
                               <Clock className="h-3 w-3" />
-                              Prazo: {new Date(act.deadline).toLocaleString("pt-BR")}
+                              Prazo: {asUtcDate(act.deadline).toLocaleString("pt-BR")}
                             </p>
                           )}
                         </div>
@@ -1020,7 +1025,7 @@ function DashboardContent() {
                                     )}
                                     {node.deadline && (
                                       <p className="text-[10px] text-amber-400 light:text-amber-700 flex items-center gap-1 mt-0.5 font-medium">
-                                        <Clock className="h-3 w-3" /> Prazo: {new Date(node.deadline).toLocaleString("pt-BR")}
+                                        <Clock className="h-3 w-3" /> Prazo: {asUtcDate(node.deadline).toLocaleString("pt-BR")}
                                       </p>
                                     )}
                                   </div>
@@ -1045,9 +1050,7 @@ function DashboardContent() {
                                 </div>
                                 <Badge variant="outline" className={`text-[10px] shrink-0 flex items-center gap-1 ${color}`}>
                                   <StatusIcon className="h-3 w-3" />
-                                  {localState.isReleased
-                                    ? (localState.scheduledDate && new Date(localState.scheduledDate) > new Date() ? "Agendado" : "Liberado")
-                                    : "Bloqueado"}
+                                  {label}
                                 </Badge>
                               </div>
                             </CardHeader>
@@ -1068,32 +1071,23 @@ function DashboardContent() {
                                 <Switch
                                   id={`release-${node.id}`}
                                   checked={localState.isReleased}
-                                  onCheckedChange={(checked) =>
-                                    setNodeReleaseState(prev => ({
-                                      ...prev,
-                                      [node.id]: { ...prev[node.id], isReleased: checked }
-                                    }))
-                                  }
+                                  onCheckedChange={(checked) => updateReleaseLocal(node.id, { isReleased: checked })}
                                 />
                               </div>
 
                               {/* Campo de agendamento (só se liberado) */}
                               {localState.isReleased && (
                                 <div className="space-y-1.5">
-                                  <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <Label htmlFor={`release-date-${node.id}`} className="text-xs text-muted-foreground flex items-center gap-1">
                                     <Calendar className="h-3 w-3" />
                                     Data/hora de liberação (opcional)
                                   </Label>
                                   <div className="flex gap-1.5">
                                     <Input
+                                      id={`release-date-${node.id}`}
                                       type="datetime-local"
                                       value={localState.scheduledDate}
-                                      onChange={(e) =>
-                                        setNodeReleaseState(prev => ({
-                                          ...prev,
-                                          [node.id]: { ...prev[node.id], scheduledDate: e.target.value }
-                                        }))
-                                      }
+                                      onChange={(e) => updateReleaseLocal(node.id, { scheduledDate: e.target.value })}
                                       className="bg-secondary border-border text-xs h-8 flex-1"
                                     />
                                     {localState.scheduledDate && (
@@ -1102,12 +1096,7 @@ function DashboardContent() {
                                         variant="ghost"
                                         size="sm"
                                         className="h-8 px-2 text-rose-400 light:text-rose-700 hover:text-rose-300 light:hover:text-rose-800 text-[10px] shrink-0"
-                                        onClick={() =>
-                                          setNodeReleaseState(prev => ({
-                                            ...prev,
-                                            [node.id]: { ...prev[node.id], scheduledDate: "" }
-                                          }))
-                                        }
+                                        onClick={() => updateReleaseLocal(node.id, { scheduledDate: "" })}
                                       >
                                         Limpar
                                       </Button>
@@ -1116,10 +1105,12 @@ function DashboardContent() {
                                   {node.released_at && (
                                     <p className="text-[10px] text-amber-400/80 light:text-amber-700/80 flex items-center gap-1">
                                       <Clock className="h-3 w-3" />
-                                      Agendado: {new Date(node.released_at).toLocaleString("pt-BR")}
+                                      Agendado: {asUtcDate(node.released_at).toLocaleString("pt-BR")}
                                     </p>
                                   )}
                                   <p className="text-[10px] text-muted-foreground">
+                                    Horário local{releaseTimeZone ? ` (${releaseTimeZone})` : " do seu dispositivo"}.
+                                    {" "}
                                     Vazio = libera imediatamente ao salvar
                                   </p>
                                 </div>
@@ -1131,9 +1122,10 @@ function DashboardContent() {
                                   size="sm"
                                   className="flex-1"
                                   variant={isDirty ? "default" : "outline"}
+                                  disabled={savingNodeIds.has(node.id) || !isDirty}
                                   onClick={() => handleSaveNodeRelease(node.id)}
                                 >
-                                  {isDirty ? "Salvar" : "Salvo"}
+                                  {savingNodeIds.has(node.id) ? "Salvando…" : isDirty ? "Salvar" : "Salvo"}
                                 </Button>
                                 <Button
                                   size="sm"

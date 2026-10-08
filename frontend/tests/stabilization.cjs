@@ -17,6 +17,13 @@ const baseURL = process.env.BASE_URL || "http://127.0.0.1:3000"
 const admin = { id: "smoke-admin", name: "Pessoa Teste", email: "smoke@example.test", type: "admin", cargo: "admin", pontos_acumulados: 0 }
 const fulfill = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) })
 
+// Concluir a última etapa abre a comemoração da trilha depois do diálogo da etapa.
+async function closeCelebration(page) {
+  const celebration = page.getByRole("dialog", { name: /^Parabéns/ })
+  await celebration.getByRole("button", { name: "Continuar" }).click()
+  await celebration.waitFor({ state: "hidden" })
+}
+
 async function authenticatedPage(browser, user, handleAPI) {
   const context = await browser.newContext()
   const page = await context.newPage()
@@ -142,7 +149,7 @@ async function checkActivitySubmission(browser, type) {
   try {
     await page.goto(`${baseURL}/${type === "trainee" ? "trainees" : "membros"}`)
     await page.getByRole("button", { name: node.name, exact: true }).click()
-    const dialog = page.getByRole("dialog")
+    const dialog = page.getByRole("dialog").filter({ hasNot: page.getByRole("heading", { name: /^Parabéns/ }) })
     await dialog.getByPlaceholder("Adicione observações...").fill("Resposta preservada")
     await dialog.getByRole("button", { name: "Enviar atividade e concluir etapa", exact: true }).click()
     await dialog.getByRole("alert").getByText("Envio temporariamente rejeitado", { exact: true }).waitFor()
@@ -152,6 +159,7 @@ async function checkActivitySubmission(browser, type) {
     fail = false
     await dialog.getByRole("button", { name: "Enviar atividade e concluir etapa", exact: true }).click()
     await dialog.waitFor({ state: "hidden" })
+    await closeCelebration(page)
     assert.equal(submissions.length, 2)
     assert.equal(submissions[1].node_id, node.id)
     assert.equal(completeRequests, 0)

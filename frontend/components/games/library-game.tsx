@@ -86,8 +86,8 @@ export function LibraryGame({ nodeId, allowRetry = true, onCompleted, onClose }:
       {!attempt && !busy && <Button onClick={() => setRetry(value => value + 1)}>Tentar novamente</Button>}
       {attempt?.result ? <>
         <GameResultView result={attempt.result} />
-        {allowRetry ? <Button variant="outline" disabled={busy} onClick={() => setRetry(value => value + 1)}>Repetir jogo</Button> : <p className="text-sm text-muted-foreground">A repetição deste jogo não está permitida.</p>}
-        <Button disabled={busy} className="w-full" onClick={() => void perform(() => onCompleted(attempt.result!))}>{busy ? "Atualizando trilha…" : "Voltar à trilha"}</Button>
+        {allowRetry ? <Button variant={attempt.result.step_completed === false ? "default" : "outline"} disabled={busy} onClick={() => setRetry(value => value + 1)}>{attempt.result.step_completed === false ? "Tentar novamente" : "Repetir jogo"}</Button> : <p className="text-sm text-muted-foreground">A repetição deste jogo não está permitida.</p>}
+        <Button disabled={busy} variant={attempt.result.step_completed === false ? "outline" : "default"} className="w-full" onClick={() => void perform(() => onCompleted(attempt.result!))}>{busy ? "Atualizando trilha…" : "Voltar à trilha"}</Button>
       </> : attempt && <>
         <p className="text-sm text-muted-foreground">O feedback das suas respostas será exibido ao concluir.</p>
         {attempt.format === "quiz" && <QuizChoices questions={attempt.questions || []} answers={draft.answers} disabled={busy} onChange={(questionId, optionIds) => changeDraft({ answers: { ...draft.answers, [questionId]: optionIds } })} />}

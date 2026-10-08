@@ -166,3 +166,37 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Comemoração ao concluir a trilha (components/dashboard/trail-celebration.tsx). */
+@keyframes trail-balloon-rise {
+  0% { transform: translate3d(0, 0, 0) scale(var(--balloon-scale)) rotate(-4deg); opacity: 0; }
+  8% { opacity: 1; }
+  50% { transform: translate3d(var(--balloon-drift), -60vh, 0) scale(var(--balloon-scale)) rotate(4deg); }
+  100% { transform: translate3d(0, -125vh, 0) scale(var(--balloon-scale)) rotate(-4deg); opacity: 1; }
+}
+
+.trail-balloon {
+  position: absolute;
+  bottom: -140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: trail-balloon-rise var(--balloon-duration) ease-in var(--balloon-delay) both;
+}
+
+.trail-balloon-body {
+  width: 46px;
+  height: 58px;
+  border-radius: 50% 50% 46% 46%;
+  box-shadow: inset -7px -9px 0 rgb(0 0 0 / 0.14), inset 6px 6px 0 rgb(255 255 255 / 0.25);
+}
+
+.trail-balloon-string {
+  width: 1px;
+  height: 56px;
+  background: color-mix(in oklab, currentColor 45%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trail-balloon { display: none; }
+}

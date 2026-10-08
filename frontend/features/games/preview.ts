@@ -33,6 +33,7 @@ export function previewBoard(draft: GameDraft): GameBoard | null {
 
 function result(feedback: Feedback, score: number, maximum: number, note = ""): GameResult {
   return {
+    grade: maximum ? Math.round(Math.min(10, Math.max(0, 10 * score / maximum)) * 100) / 100 : 0,
     attempt_score: maximum ? Math.round(score * 100 / maximum) : 0, max_score: 100,
     score_added: 0, total_score: 0, user_total_points: 0, note, feedback,
   }
@@ -43,10 +44,18 @@ export function previewResult(draft: GameDraft, state: AttemptDraft): GameResult
     const feedback: Feedback = draft.config.questions.map(question => {
       const selected = state.answers[question.id] || []
       const correct = question.options.filter(option => option.is_correct).map(option => option.id)
-      const is_correct = selected.length === correct.length && selected.every(id => correct.includes(id))
+      const hits = selected.filter(id => correct.includes(id)).length
+      const wrong = selected.length - hits
+      const is_correct = hits === correct.length && wrong === 0
+      // Same partial credit as the API: start at 100% and lose 1/(right options) per error,
+      // a wrong option marked or a right one left unmarked.
+      const errors = (correct.length - hits) + wrong
+      const score = correct.length ? Math.round(question.weight * Math.max(0, 1 - errors / correct.length) * 100) / 100 : 0
       return {
         question_id: question.id, text: question.text, option_ids: selected, is_correct,
-        score: is_correct ? question.weight : 0, max_score: question.weight, explanation: question.explanation,
+        status: is_correct ? "correct" as const : hits ? "partial" as const : "incorrect" as const,
+        correct_selected: hits, correct_total: correct.length, wrong_selected: wrong,
+        score, max_score: question.weight, explanation: question.explanation,
         feedback: question.options.filter(option => selected.includes(option.id)).map(option => option.feedback).filter(Boolean).join("\n"),
       }
     })

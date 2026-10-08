@@ -76,7 +76,7 @@ A nota é a média ponderada das **atividades obrigatórias já corrigidas** e d
 média = soma(nota × peso) / soma(dos pesos considerados)
 ```
 
-A nota de um jogo é `10 × pontos obtidos / pontos possíveis`, de 0 a 10, calculada pelo servidor ao concluir; vale a melhor tentativa. Quizzes antigos sem pesos nas alternativas usam a proporção de acertos.
+A nota de um jogo é `10 × pontos obtidos / pontos possíveis`, de 0 a 10, calculada pelo servidor ao concluir; vale a melhor tentativa. Quizzes antigos sem pesos nas alternativas usam a proporção de acertos. Um jogo com repetição ainda abaixo da nota mínima 7 entra na média com a melhor nota obtida, mesmo sem concluir a etapa.
 
 Exemplo de cálculo: entrega com nota 4 e peso 2, e jogo com nota 10 e peso 3, resultam em `(4×2 + 10×3) / 5 = 7,60`.
 
@@ -84,13 +84,30 @@ Entregas pendentes e atividades ou jogos opcionais não reduzem a média. Sem no
 
 O backend recalcula quando uma nota é salva, quando um jogo é concluído, quando o peso ou a obrigatoriedade de uma atividade ou etapa de jogo muda e quando uma atividade ou etapa de jogo é excluída. `users.nota_rotacao` é um cache calculado para manter compatibilidade com as respostas da API, e não um campo de lançamento manual. A rotação/ciclo do trainee (`rotacao`) continua sendo um dado administrativo separado.
 
-O frontend não exibe troféus, pontos acumulados nem bonificações; mostra conclusão, nota e feedback das respostas. Os registros históricos de pontuação (até 100 pontos por etapa) permanecem no servidor e não entram na média: ela usa a nota de 0 a 10 do jogo.
+Para trainees, o frontend não exibe troféus, pontos nem bonificações; mostra conclusão, nota e feedback das respostas. Os registros históricos de pontuação (até 100 pontos por etapa, `pontos_acumulados`) permanecem no servidor e não entram na média nem na gamificação dos membros: elas usam a nota de 0 a 10.
+
+### Gamificação dos membros
+
+Exclusiva para o perfil **membro**: `GET /api/gamification` responde 403 para trainees e perfis administrativos, e a aba **Conquistas** existe só no portal do membro. Nada é gravado: tudo é recalculado a cada consulta a partir das notas, então correções e novas tentativas valem na hora.
+
+- **Pontos:** cada jogo (melhor nota) e cada entrega corrigida (nota efetiva, a maior entre a atual e a anterior) vale `nota × 10`, de 0 a 100. Opcionais também pontuam; entregas pendentes não.
+- **Nível:** 1 Iniciante (0), 2 Aprendiz (100), 3 Praticante (250), 4 Competente (450), 5 Avançado (700), 6 Especialista (1000) e 7 Mestre (1400 pontos). O cabeçalho mostra nível e pontos; a aba mostra quanto falta para o próximo.
+- **Conquistas:** Primeiro passo (concluir uma etapa), Nota máxima (um 10), Persistente (ser aprovado num jogo depois de uma tentativa abaixo de 7), Consistente (7 ou mais em cinco avaliações) e Trilha concluída (todas as etapas obrigatórias do eixo do membro). As que têm meta mostram o progresso.
+- **Ranking:** todos os membros por pontos, com empates na mesma posição (1, 1, 3). A aba começa no eixo do membro, com posições recalculadas dentro dele, e alterna para o geral. Mostra nome, eixo, nível e pontos; notas individuais não aparecem.
 
 ## Trilhas e acesso ao conteúdo
 
 O fluxo de autoria de conteúdo é **material → atividade → nó**: crie o material na biblioteca, selecione-o na atividade e vincule a atividade ao nó. Materiais também podem existir apenas na biblioteca, sem atividade ou nó. A criação de nós oferece atividade ou versão publicada de jogo; nós antigos de leitura continuam compatíveis. No gerenciamento da trilha, **Editar nó** permite alterar nome, conteúdo associado, prazo e pré-requisito. Tipo e eixo são preservados. Pré-requisitos que criariam ciclos são rejeitados. Etapas de jogo podem ter um material de apoio opcional, disponível durante o jogo e na biblioteca somente após o desbloqueio da etapa. A leitura desse material não conclui o jogo. Ao selecionar um jogo, membros e trainees navegam para uma página dedicada (`/trilha/{id}/jogar`), com material de apoio e retorno à trilha. As prévias administrativas ocupam a área da página e permitem voltar ao editor mantendo o rascunho. Uma versão de jogo com tentativas registradas não pode ser substituída no mesmo nó. Ao abrir a etapa, `GET /api/nodes/{id}/content` retorna sua atividade, o material dessa atividade (texto, documentos e vídeos) e a entrega do participante, depois de verificar as permissões e o desbloqueio. O leitor não depende da lista de materiais já carregada no navegador. A trilha é sequencial por eixo: a etapa obrigatória anterior na ordem é o pré-requisito implícito, e etapas opcionais não bloqueiam as seguintes. Quando existe um pré-requisito explícito, ele prevalece. As conexões visuais seguem a regra usada pela API.
 
 O administrador pode liberar etapas imediatamente ou agendar a liberação. Participantes só abrem etapas liberadas e com pré-requisitos concluídos.
+
+O agendamento usa o horário local do navegador, com o fuso indicado junto ao campo. A atualização automática preserva alterações ainda não salvas; durante o salvamento, novas edições também ficam preservadas e o botão impede envios duplicados. Campo, legenda e status usam a mesma interpretação de data. Se a consulta feita no horário de liberação falhar ou chegar atrasada, a tela volta a consultar automaticamente.
+
+Prazos de atividades e de nós seguem a mesma conversão: aparecem no horário local do navegador no painel, na trilha e na aba de atividades, e salvar a edição de uma atividade ou de um nó sem mexer no prazo mantém o mesmo horário.
+
+Em `PATCH /api/nodes/{id}/release`, `released_at` exige fuso explícito (por exemplo, `2030-01-02T14:00:00-03:00` ou `2030-01-02T17:00:00Z`); `null` ou omissão mantêm a liberação imediata quando `is_released` é verdadeiro. A mesma regra vale para `deadline` na criação e na edição de atividades e de nós. A API converte esses horários para UTC antes de gravar nas colunas existentes, que guardam UTC sem fuso, independentemente do fuso da conexão com o banco, e sempre responde com `Z`. Datas novas sem fuso retornam 422. Registros antigos continuam sendo interpretados como UTC, conforme a regra anterior; esta correção não migra nem desloca horários já armazenados.
+
+Ao concluir todas as etapas obrigatórias da trilha oficial (a dos trainees, ou a do eixo do membro), o participante vê uma mensagem de parabéns com balões. Ela aparece uma vez para cada conjunto de etapas concluídas (guardado no navegador): se novas etapas forem concluídas depois, a comemoração volta. Se o diálogo de uma etapa estiver aberto, ela espera ele fechar; com movimento reduzido no sistema, os balões não aparecem.
 
 A biblioteca do participante mostra apenas materiais de etapas que ele já **alcançou**: a etapa pertence a uma trilha que ele pode ver, está liberada, o agendamento já passou e o pré-requisito efetivo foi concluído. Alcançar não é concluir: com as etapas 1 e 2 concluídas e a 3 aberta, os materiais das três aparecem. O vínculo é o mesmo usado na leitura da etapa (o material da atividade, ou a referência direta de etapas antigas de leitura); basta uma etapa alcançada para um material com vários vínculos, e ele aparece uma vez. Materiais sem etapa, ou ligados apenas a atividades fora da trilha, ficam restritos à autoria no painel. Bloquear de novo uma etapa ou remover o vínculo recalcula o acesso na consulta seguinte. Atividades fora da trilha continuam visíveis como antes.
 
@@ -118,7 +135,7 @@ O autor cria rascunhos vazios e fornece o conteúdo. A plataforma não gera ativ
 
 | Formato | Como funciona |
 | --- | --- |
-| Questionário | Perguntas de escolha única ou múltipla, pesos e explicações. A seleção múltipla exige o conjunto correto de alternativas. |
+| Questionário | Perguntas de escolha única ou múltipla, pesos e explicações. Na seleção múltipla, a questão começa valendo 100% do peso e cada erro (alternativa incorreta marcada ou correta não marcada) desconta `100% ÷ número de alternativas corretas`, com mínimo zero. Por exemplo, com 3 corretas, marcar 2 delas e mais 1 incorreta vale 33,3%; com 2 corretas, marcar as 2 e mais 1 incorreta vale 50%; o resultado mostra a questão como correta, parcialmente correta ou incorreta, com quantas corretas foram marcadas. |
 | Cenário situacional | Contexto e decisões que conduzem a outros passos ou encerram o caminho. Cada decisão tem pontos e feedback; ciclos e passos inalcançáveis são rejeitados na publicação. |
 | Associação | Relacionar itens de duas listas, com possibilidade de alternativas distratoras. |
 | Ordenação | Colocar cartões na sequência correta. |
@@ -132,7 +149,7 @@ Um rascunho nunca publicado exclui livremente. Um jogo publicado também pode se
 
 O servidor recebe respostas/decisões e calcula o resultado. Não aceita uma pontuação arbitrária calculada no navegador nem entrega o gabarito antes da avaliação. Os formatos da biblioteca são normalizados para até 100 pontos por etapa; vale o melhor resultado e só a melhora acrescenta pontos à pessoa. Repetir uma requisição de conclusão não pontua novamente.
 
-Com repetição permitida, abrir o jogo concluído começa uma nova tentativa, e o resultado mostra a nota da tentativa e a melhor nota. Sem repetição, a primeira tentativa concluída é definitiva: abrir de novo mostra o resultado, e uma tentativa em andamento quando a repetição for desligada não pode mais ser concluída.
+Com repetição permitida, a etapa só é concluída quando a melhor nota chega a **7**: abaixo disso, o resultado avisa a nota mínima, oferece **Tentar novamente** (sem limite de tentativas) e a etapa seguinte continua bloqueada. Uma tentativa pior depois da aprovação não reabre a etapa, e progressos concluídos antes desta regra continuam concluídos. Abrir o jogo de novo começa outra tentativa, e o resultado mostra a nota da tentativa e a melhor nota. Sem repetição, qualquer nota conclui a etapa. Sem repetição, a primeira tentativa concluída é definitiva: abrir de novo mostra o resultado, e uma tentativa em andamento quando a repetição for desligada não pode mais ser concluída.
 
 Cenários salvam as decisões no servidor. Os demais formatos mantêm as escolhas em andamento no navegador para retomada da tentativa; a avaliação é enviada ao concluir. Essa retomada local depende do mesmo navegador. Quizzes antigos continuam funcionando pelo fluxo legado de respostas avaliadas no servidor, com os pesos originais.
 

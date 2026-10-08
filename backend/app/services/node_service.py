@@ -292,33 +292,33 @@ def submit_game_score(
             id=str(_uuid.uuid4()),
             user_id=current_user.id,
             node_id=node.id,
-            completed=True,
+            completed=False,
             score=score,
-            completed_at=datetime.now(timezone.utc),
         )
         db.add(progress)
         score_added = score
         current_user.pontos_acumulados += score_added
-    else:
-        if score > progress.score:
-            score_added = score - progress.score
-            current_user.pontos_acumulados += score_added
-            progress.score = score
-        if not progress.completed:
-            progress.completed = True
-            progress.completed_at = datetime.now(timezone.utc)
+    elif score > progress.score:
+        score_added = score - progress.score
+        current_user.pontos_acumulados += score_added
+        progress.score = score
 
-    from app.services.assessment_service import normalized_grade
+    from app.services.assessment_service import min_grade_for, normalized_grade, passes
     from app.services.activity_service import recompute_user_grade
     # Quizzes antigos sem pesos ainda recebem nota pela proporção de acertos.
     grade = normalized_grade(score, max_score) if max_score else normalized_grade(
         sum(item["is_correct"] for item in feedback), len(feedback))
     progress.grade = max(progress.grade if progress.grade is not None else 0, grade)
+    # Abaixo da nota mínima, um jogo repetível mantém a etapa aberta.
+    if not progress.completed and passes(node, progress.grade):
+        progress.completed = True
+        progress.completed_at = datetime.now(timezone.utc)
     recompute_user_grade(db, current_user.id)
     db.commit()
     return {
         "detail": "Nota registrada com sucesso",
         "grade": grade, "best_grade": progress.grade,
+        "min_grade": min_grade_for(node), "step_completed": progress.completed,
         "attempt_score": score,
         "max_score": max_score,
         "feedback": feedback,

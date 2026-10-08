@@ -170,9 +170,14 @@ export interface ScenarioAnswer {
   option_id: string
 }
 
+export type AnswerStatus = "correct" | "partial" | "incorrect"
+
 export interface GameResult {
   grade?: number
   best_grade?: number
+  /** Best grade that concludes a repeatable game; null when any grade concludes it. */
+  min_grade?: number | null
+  step_completed?: boolean
   attempt_score: number
   max_score: number
   score_added: number
@@ -186,6 +191,11 @@ export interface GameResult {
     text: string
     option_ids: string[]
     is_correct?: boolean
+    /** Quiz questions only; older results carry just is_correct. */
+    status?: AnswerStatus
+    correct_selected?: number
+    correct_total?: number
+    wrong_selected?: number
     score: number
     max_score: number
     explanation: string

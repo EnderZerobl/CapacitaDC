@@ -1,5 +1,7 @@
 """Integration coverage for node contracts and server-side quiz evaluation."""
 import unittest
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import test_creation
 from test_creation import models
@@ -110,6 +112,162 @@ class NodeTests(unittest.TestCase):
             self.assertEqual(status, 200)
             self.assertEqual(result['activity_id'], activity['id'])
             self.assertEqual(result['deadline'], node['deadline'])
+
+    def test_release_offsets_round_trip_as_the_same_utc_instant(self):
+        node = self.game()
+        path = f"/api/nodes/{node['id']}/release"
+        for value in ['2030-01-02T17:30:00Z', '2030-01-02T14:30:00-03:00',
+                      '2030-01-02T23:00:00+05:30']:
+            with self.subTest(value=value):
+                status, result = self.request('PATCH', path, {'is_released': True, 'released_at': value})
+                self.assertEqual(status, 200, result)
+                self.assertEqual(result['released_at'], '2030-01-02T17:30:00Z')
+                with self.api.sessions() as db:
+                    stored = db.get(models.TrainingNode, node['id']).released_at
+                    self.assertEqual(stored, datetime(2030, 1, 2, 17, 30))
+                    self.assertIsNone(stored.tzinfo)
+                for role in ['admin', 'membro']:
+                    status, listing = self.request('GET', '/api/nodes', role=role)
+                    self.assertEqual(status, 200)
+                    self.assertEqual(listing[0]['released_at'], result['released_at'])
+                # A client may submit the returned timestamp without changing it.
+                status, repeated = self.request('PATCH', path, {
+                    'is_released': True, 'released_at': result['released_at'],
+                })
+                self.assertEqual(status, 200)
+                self.assertEqual(repeated['released_at'], result['released_at'])
+
+    def test_release_rejects_missing_timezone_without_changing_schedule(self):
+        node = self.game()
+        path = f"/api/nodes/{node['id']}/release"
+        status, _ = self.request('PATCH', path, {
+            'is_released': True, 'released_at': '2030-01-02T14:00:00-03:00',
+        })
+        self.assertEqual(status, 200)
+        for value in ['2030-01-03T14:00:00', '2030-01-03']:
+            with self.subTest(value=value):
+                status, result = self.request('PATCH', path, {'is_released': True, 'released_at': value})
+                self.assertEqual(status, 422, result)
+                self.assertEqual(result['detail'][0]['loc'], ['body', 'released_at'])
+                self.assertIn('fuso horário', result['detail'][0]['msg'])
+        with self.api.sessions() as db:
+            self.assertEqual(db.get(models.TrainingNode, node['id']).released_at, datetime(2030, 1, 2, 17))
+
+    def test_legacy_utc_release_is_explicit_in_response_without_rewriting_storage(self):
+        node = self.game()
+        legacy_value = datetime(2030, 1, 2, 17)
+        with self.api.sessions() as db:
+            db.get(models.TrainingNode, node['id']).released_at = legacy_value
+            db.commit()
+        status, listing = self.request('GET', '/api/nodes')
+        self.assertEqual(status, 200)
+        self.assertEqual(listing[0]['released_at'], '2030-01-02T17:00:00Z')
+        with self.api.sessions() as db:
+            self.assertEqual(db.get(models.TrainingNode, node['id']).released_at, legacy_value)
+
+    def test_release_opens_at_exact_instant_in_listing_and_content(self):
+        node = self.game()
+        release_time = datetime(2030, 1, 2, 17, tzinfo=timezone.utc)
+        status, _ = self.request('PATCH', f"/api/nodes/{node['id']}/release", {
+            'is_released': True, 'released_at': '2030-01-02T14:00:00-03:00',
+        })
+        self.assertEqual(status, 200)
+        for delta, unlocked in [(timedelta(microseconds=-1), False),
+                                (timedelta(), True), (timedelta(microseconds=1), True)]:
+            with self.subTest(delta=delta), patch('app.services.node_service.datetime') as listing_clock, \
+                    patch('app.services.access.datetime') as access_clock:
+                listing_clock.now.return_value = access_clock.now.return_value = release_time + delta
+                status, listing = self.request('GET', '/api/nodes', role='membro')
+                self.assertEqual(status, 200)
+                self.assertEqual(listing[0]['unlocked'], unlocked)
+                status, result = self.request('GET', f"/api/nodes/{node['id']}/content", role='membro')
+                self.assertEqual(status, 200 if unlocked else 403, result)
+
+    def test_scheduled_release_still_requires_completed_prerequisite(self):
+        first = self.game()
+        second = self.game(prerequisite_node_id=first['id'])
+        release_time = datetime(2030, 1, 2, 17, tzinfo=timezone.utc)
+        status, _ = self.request('PATCH', f"/api/nodes/{second['id']}/release", {
+            'is_released': True, 'released_at': release_time.isoformat(),
+        })
+        self.assertEqual(status, 200)
+        with patch('app.services.node_service.datetime') as listing_clock, \
+                patch('app.services.access.datetime') as access_clock:
+            listing_clock.now.return_value = access_clock.now.return_value = release_time
+            for completed in [False, True]:
+                if completed:
+                    status, result = self.request('POST', f"/api/nodes/{first['id']}/submit-game",
+                                                  self.choices(first), role='membro')
+                    self.assertEqual(status, 200, result)
+                status, listing = self.request('GET', '/api/nodes', role='membro')
+                self.assertEqual(status, 200)
+                scheduled = next(item for item in listing if item['id'] == second['id'])
+                self.assertEqual(scheduled['unlocked'], completed)
+                status, result = self.request('GET', f"/api/nodes/{second['id']}/content", role='membro')
+                self.assertEqual(status, 200 if completed else 403, result)
+
+    def test_immediate_release_clears_schedule_and_revocation_blocks_access(self):
+        node = self.game()
+        path = f"/api/nodes/{node['id']}/release"
+        with patch('app.services.node_service.datetime') as listing_clock, \
+                patch('app.services.access.datetime') as access_clock:
+            listing_clock.now.return_value = access_clock.now.return_value = datetime(2030, 1, 1, tzinfo=timezone.utc)
+            for payload in [{'is_released': True, 'released_at': None}, {'is_released': True}]:
+                status, _ = self.request('PATCH', path, {
+                    'is_released': True, 'released_at': '2030-01-02T17:00:00Z',
+                })
+                self.assertEqual(status, 200)
+                status, _ = self.request('GET', f"/api/nodes/{node['id']}/content", role='membro')
+                self.assertEqual(status, 403)
+                status, result = self.request('PATCH', path, payload)
+                self.assertEqual(status, 200, result)
+                self.assertIsNone(result['released_at'])
+                status, listing = self.request('GET', '/api/nodes', role='membro')
+                self.assertEqual(status, 200)
+                self.assertTrue(listing[0]['unlocked'])
+                status, _ = self.request('GET', f"/api/nodes/{node['id']}/content", role='membro')
+                self.assertEqual(status, 200)
+            status, result = self.request('PATCH', path, {
+                'is_released': False, 'released_at': '2029-12-31T17:00:00Z',
+            })
+            self.assertEqual(status, 200)
+            self.assertIsNone(result['released_by'])
+            _, listing = self.request('GET', '/api/nodes', role='membro')
+            self.assertFalse(listing[0]['unlocked'])
+            status, _ = self.request('GET', f"/api/nodes/{node['id']}/content", role='membro')
+            self.assertEqual(status, 403)
+
+    def test_node_deadline_offsets_round_trip_as_the_same_utc_instant(self):
+        node = self.game(deadline='2030-01-02T14:00:00-03:00')
+        self.assertEqual(node['deadline'], '2030-01-02T17:00:00Z')
+        path = f"/api/nodes/{node['id']}"
+        for value in ['2030-01-02T23:00:00+05:30', '2030-01-02T17:30:00Z']:
+            with self.subTest(value=value):
+                status, updated = self.request('PATCH', path, {'deadline': value})
+                self.assertEqual(status, 200, updated)
+                self.assertEqual(updated['deadline'], '2030-01-02T17:30:00Z')
+                with self.api.sessions() as db:
+                    stored = db.get(models.TrainingNode, node['id']).deadline
+                    self.assertEqual(stored, datetime(2030, 1, 2, 17, 30))
+                    self.assertIsNone(stored.tzinfo)
+                _, listing = self.request('GET', '/api/nodes', role='membro')
+                self.assertEqual(listing[0]['deadline'], updated['deadline'])
+
+    def test_node_deadline_without_timezone_is_rejected(self):
+        node = self.game(deadline='2030-01-02T17:00:00Z')
+        game = {'type': 'game', 'eixo': 'vendas', 'deadline': '2030-01-02T14:00:00', 'questions': [
+            {'text': 'Pergunta', 'options': [{'text': 'A', 'score': 10, 'is_correct': True}, {'text': 'B', 'score': 0}]},
+        ]}
+        for method, path, payload in [('POST', '/api/nodes', game),
+                                      ('PATCH', f"/api/nodes/{node['id']}", {'deadline': '2030-01-03T14:00:00'})]:
+            with self.subTest(method=method):
+                status, result = self.request(method, path, payload)
+                self.assertEqual(status, 422, result)
+                self.assertEqual(result['detail'][0]['loc'], ['body', 'deadline'])
+                self.assertIn('fuso horário', result['detail'][0]['msg'])
+        with self.api.sessions() as db:
+            self.assertEqual(db.query(models.TrainingNode).count(), 1)
+            self.assertEqual(db.get(models.TrainingNode, node['id']).deadline, datetime(2030, 1, 2, 17))
 
     def test_invalid_quiz_creation_is_rejected(self):
         variants = [[], [{'text': '', 'options': []}], [{'text': 'Q', 'options': [{'text': 'A', 'is_correct': True}]}], [{'text': 'Q', 'options': [{'text': 'A'}, {'text': 'B'}]}]]

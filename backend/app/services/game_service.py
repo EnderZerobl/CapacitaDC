@@ -155,9 +155,13 @@ def attempt_to_out(attempt):
     step = _scenario_step(attempt) if scenario and attempt.status != "completed" else None
     result = deepcopy(attempt.result) if attempt.status == "completed" else None
     if result:
-        from app.services.assessment_service import normalized_grade
+        from app.services.assessment_service import min_grade_for, normalized_grade
         result.setdefault("grade", normalized_grade(result["attempt_score"], result["max_score"]))
-        result["best_grade"] = next((progress.grade for progress in attempt.node.progress if progress.user_id == attempt.user_id), result["grade"])
+        progress = next((item for item in attempt.node.progress if item.user_id == attempt.user_id), None)
+        result["best_grade"] = progress.grade if progress else result["grade"]
+        # Current state, not the one at completion: a later retry may have passed.
+        result["min_grade"] = min_grade_for(attempt.node)
+        result["step_completed"] = bool(progress and progress.completed)
     return {
         "id": attempt.id, "node_id": attempt.node_id,
         "game_revision_id": revision.id, "status": attempt.status,
@@ -233,13 +237,21 @@ def _evaluate_quiz(config, answers):
             raise HTTPException(400, "Alternativas repetidas ou que não pertencem à pergunta")
         if question["selection"] == "single" and len(selected) != 1:
             raise HTTPException(400, "Selecione uma alternativa nas perguntas de escolha única")
-        correct = set(selected) == {option["id"] for option in options.values() if option["is_correct"]}
-        earned = question["weight"] if correct else 0
+        expected = {option["id"] for option in options.values() if option["is_correct"]}
+        hits, wrong = len(expected & set(selected)), len(set(selected) - expected)
+        correct = set(selected) == expected
+        # Partial credit: the question starts at 100% and each error — a wrong option
+        # marked or a right one left unmarked — takes 1/(right options) of it, down to 0.
+        # Single choice stays 0 or 100%.
+        errors = (len(expected) - hits) + wrong
+        earned = round(question["weight"] * max(0, 1 - errors / len(expected)), 2)
         score += earned
         maximum += question["weight"]
         feedback.append({
             "question_id": question_id, "text": question["text"], "option_ids": selected,
-            "is_correct": correct, "score": earned, "max_score": question["weight"],
+            "is_correct": correct, "status": "correct" if correct else "partial" if hits else "incorrect",
+            "correct_selected": hits, "correct_total": len(expected), "wrong_selected": wrong,
+            "score": earned, "max_score": question["weight"],
             "explanation": question["explanation"],
             "feedback": "\n".join(options[option_id]["feedback"] for option_id in selected if options[option_id]["feedback"]),
         })
@@ -365,18 +377,20 @@ def complete_attempt(db: Session, attempt_id, user, payload):
     delta = max(0, normalized - progress.score)
     progress.score = max(progress.score, normalized)
     user.pontos_acumulados += delta
-    if not progress.completed:
-        progress.completed = True
-        progress.completed_at = datetime.now(timezone.utc)
     attempt.status = "completed"
     attempt.active_key = None
     attempt.completed_at = datetime.now(timezone.utc)
-    from app.services.assessment_service import normalized_grade
+    from app.services.assessment_service import min_grade_for, normalized_grade, passes
     from app.services.activity_service import recompute_user_grade
     grade = normalized_grade(score, maximum)
     progress.grade = max(progress.grade if progress.grade is not None else 0, grade)
+    # Below the minimum, a repeatable game keeps the step open until a retry passes.
+    if not progress.completed and passes(attempt.node, progress.grade):
+        progress.completed = True
+        progress.completed_at = datetime.now(timezone.utc)
     attempt.result = {
         "grade": grade, "best_grade": progress.grade,
+        "min_grade": min_grade_for(attempt.node), "step_completed": progress.completed,
         "attempt_score": normalized, "max_score": attempt.revision.max_points,
         "score_added": delta, "total_score": progress.score,
         "user_total_points": user.pontos_acumulados, "note": note, "feedback": feedback,

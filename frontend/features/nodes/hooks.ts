@@ -4,17 +4,20 @@
 
 import { useState, useCallback, useEffect, useRef } from "react"
 import { nodesApi } from "./api"
+import { asUtcDate, localInputToUtc, utcToLocalInput } from "@/lib/datetime"
 import type { TrainingNode, NodeContent, NodeReleasePayload, GameAnswer } from "./types"
 
-/** Converts a UTC ISO string (possibly naive, without 'Z') to local "YYYY-MM-DDTHH:mm" format */
-export function utcToLocalInput(utcIso: string): string {
-  // Backend returns naive datetimes (no timezone indicator) that are actually UTC.
-  // Append 'Z' if missing so the browser interprets the string as UTC, not local.
-  const hasTimezone = utcIso.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(utcIso)
-  const d = new Date(hasTimezone ? utcIso : utcIso + 'Z')
-  // Use local Date getters — they automatically convert to the user's timezone
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+type ReleaseDraft = { isReleased: boolean; scheduledDate: string }
+
+function releaseDraft(node: TrainingNode): ReleaseDraft {
+  return {
+    isReleased: node.is_released,
+    scheduledDate: node.released_at ? utcToLocalInput(node.released_at) : "",
+  }
+}
+
+function sameRelease(a: ReleaseDraft | undefined, b: ReleaseDraft | undefined): boolean {
+  return a?.isReleased === b?.isReleased && a?.scheduledDate === b?.scheduledDate
 }
 
 export function useNodes() {
@@ -23,28 +26,44 @@ export function useNodes() {
   const [error, setError] = useState<string | null>(null)
 
   // Per-node local release state: nodeId → { isReleased, scheduledDate }
-  const [nodeReleaseState, setNodeReleaseState] = useState<
-    Record<string, { isReleased: boolean; scheduledDate: string }>
-  >({})
+  const [nodeReleaseState, setNodeReleaseState] = useState<Record<string, ReleaseDraft>>({})
+  const savedReleases = useRef<Record<string, ReleaseDraft>>({})
+  const listVersion = useRef(0)
+  const lastReadStartedAt = useRef(0)
+  const saving = useRef(new Set<string>())
+  const [savingNodeIds, setSavingNodeIds] = useState(new Set<string>())
 
   const refresh = useCallback(async () => {
+    // A list fetched during a write may still contain the pre-save value.
+    if (saving.current.size > 0) return
+    const request = ++listVersion.current
+    const startedAt = Date.now()
     try {
       setLoading(true)
       const data = await nodesApi.list()
+      if (request !== listVersion.current) return
+      lastReadStartedAt.current = startedAt
       setNodes(data)
       setError(null)
-      const initial: Record<string, { isReleased: boolean; scheduledDate: string }> = {}
-      data.forEach((n) => {
-        initial[n.id] = {
-          isReleased: n.is_released,
-          scheduledDate: n.released_at ? utcToLocalInput(n.released_at) : "",
+      const previousSaved = savedReleases.current
+      const nextSaved = Object.fromEntries(data.map(node => [node.id, releaseDraft(node)]))
+      savedReleases.current = nextSaved
+      setNodeReleaseState(previous => {
+        const next: Record<string, ReleaseDraft> = {}
+        for (const node of data) {
+          // Polling can update the server state without erasing an unsaved draft.
+          next[node.id] = previous[node.id] && !sameRelease(previous[node.id], previousSaved[node.id])
+            ? previous[node.id]
+            : nextSaved[node.id]
         }
+        return next
       })
-      setNodeReleaseState(initial)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar nós")
+      if (request === listVersion.current) {
+        setError(e instanceof Error ? e.message : "Erro ao carregar nós")
+      }
     } finally {
-      setLoading(false)
+      if (request === listVersion.current) setLoading(false)
     }
   }, [])
 
@@ -60,35 +79,38 @@ export function useNodes() {
     const now = Date.now()
     const scheduledNodes = nodes.filter((n) => {
       if (!n.is_released || !n.released_at) return false
-      const hasTimezone = n.released_at.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(n.released_at)
-      const releaseMs = new Date(hasTimezone ? n.released_at : n.released_at + 'Z').getTime()
-      return releaseMs > now
+      const releaseMs = asUtcDate(n.released_at).getTime()
+      // A slow response may still say "locked" for a release that happened
+      // during the request. Fetch once more even if that instant has passed.
+      return releaseMs > now || releaseMs > lastReadStartedAt.current
     })
 
     if (scheduledNodes.length === 0) return
 
     // Find the nearest upcoming release
     const nextReleaseMs = Math.min(
-      ...scheduledNodes.map((n) => {
-        const hasTimezone = n.released_at!.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(n.released_at!)
-        return new Date(hasTimezone ? n.released_at! : n.released_at! + 'Z').getTime()
-      })
+      ...scheduledNodes.map((n) => asUtcDate(n.released_at!).getTime())
     )
 
     // Schedule refresh at that exact moment (+ small buffer), capped at 60s interval
     const msUntilRelease = nextReleaseMs - Date.now()
     const delay = Math.min(Math.max(msUntilRelease + 1000, 1000), 60_000)
 
-    const timer = setTimeout(() => {
-      refresh()
-    }, delay)
+    let cancelled = false
+    const poll = async () => {
+      await refresh()
+      // Successful reads replace nodes and restart this effect. Retry failed or
+      // skipped reads too, including a failure at the scheduled release time.
+      if (!cancelled) timer = setTimeout(poll, 60_000)
+    }
+    let timer = setTimeout(poll, delay)
 
-    return () => clearTimeout(timer)
+    return () => { cancelled = true; clearTimeout(timer) }
   }, [nodes, refresh])
 
   const updateReleaseLocal = (
     nodeId: string,
-    patch: Partial<{ isReleased: boolean; scheduledDate: string }>
+    patch: Partial<ReleaseDraft>
   ) => {
     setNodeReleaseState((prev) => ({
       ...prev,
@@ -98,23 +120,33 @@ export function useNodes() {
 
   const saveNodeRelease = async (nodeId: string) => {
     const state = nodeReleaseState[nodeId]
-    if (!state) return
+    if (!state || saving.current.has(nodeId)) return
     const payload: NodeReleasePayload = {
       is_released: state.isReleased,
       released_at:
         state.isReleased && state.scheduledDate
-          ? new Date(state.scheduledDate).toISOString()
+          ? localInputToUtc(state.scheduledDate)
           : null,
     }
-    const updated = await nodesApi.release(nodeId, payload)
-    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, ...updated } : n)))
-    setNodeReleaseState((prev) => ({
-      ...prev,
-      [nodeId]: {
-        isReleased: updated.is_released,
-        scheduledDate: updated.released_at ? utcToLocalInput(updated.released_at) : "",
-      },
-    }))
+    saving.current.add(nodeId)
+    setSavingNodeIds(new Set(saving.current))
+    ++listVersion.current // Discard reads started before this save.
+    setLoading(false)
+    try {
+      const updated = await nodesApi.release(nodeId, payload)
+      const saved = releaseDraft(updated)
+      savedReleases.current = { ...savedReleases.current, [nodeId]: saved }
+      setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, ...updated } : n)))
+      setNodeReleaseState((prev) => sameRelease(prev[nodeId], state)
+        ? { ...prev, [nodeId]: saved }
+        : prev) // Keep edits made while the save was in flight.
+    } finally {
+      saving.current.delete(nodeId)
+      setSavingNodeIds(new Set(saving.current))
+      // Reconcile any reads skipped or invalidated while writes were pending,
+      // including updates triggered by other actions on the trail.
+      if (saving.current.size === 0) void refresh()
+    }
   }
 
   const moveNode = async (nodeId: string, direction: "up" | "down", eixo: string) => {
@@ -165,7 +197,7 @@ export function useNodes() {
     error,
     refresh,
     nodeReleaseState,
-    setNodeReleaseState,
+    savingNodeIds,
     updateReleaseLocal,
     saveNodeRelease,
     moveNode,

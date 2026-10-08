@@ -56,7 +56,7 @@ function GamePageContent({ nodeId }: { nodeId: string }) {
         : !node.unlocked ? <div className="space-y-3"><h1 className="text-xl font-semibold">Este jogo ainda está bloqueado.</h1><p className="text-muted-foreground">Conclua as etapas anteriores e aguarde a liberação para jogar.</p><Button variant="outline" onClick={() => void refresh()}>Verificar liberação</Button></div>
         : <>
           <h1 className="text-2xl font-bold sm:text-3xl">{node.name}</h1>
-          <p className="text-sm text-muted-foreground">{node.is_required === false ? "Opcional · não entra na média" : `Obrigatório · peso ${node.weight ?? 1}`} · {node.allow_retry === false ? "Tentativa única" : "Repetição permitida · vale a melhor nota"}</p>
+          <p className="text-sm text-muted-foreground">{node.is_required === false ? "Opcional · não entra na média" : `Obrigatório · peso ${node.weight ?? 1}`} · {node.allow_retry === false ? "Tentativa única" : "Repetição permitida · vale a melhor nota · nota mínima 7 para avançar"}</p>
           {node.reference_id && <GameMaterial nodeId={node.id} />}
           {node.game_revision_id
             ? <LibraryGame nodeId={node.id} allowRetry={node.allow_retry !== false} onCompleted={complete} onClose={returnToTrail} />
