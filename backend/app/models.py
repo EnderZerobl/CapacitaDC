@@ -1,10 +1,27 @@
 import uuid
+from datetime import timezone
 from sqlalchemy import Column, String, Float, Boolean, ForeignKey, Text, Integer, DateTime, JSON, UniqueConstraint, true
 from sqlalchemy.orm import relationship
+from sqlalchemy.types import TypeDecorator
 from app.database import Base
 
 def generate_uuid():
     return str(uuid.uuid4())
+
+
+class UTCDateTime(TypeDecorator):
+    """UTC instant stored without tzinfo, the format the existing columns already use.
+
+    Aware values are converted before reaching the driver, so the stored value does
+    not depend on the database session time zone. Naive values are already UTC.
+    """
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None and value.tzinfo is not None:
+            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
 
 class User(Base):
     __tablename__ = "users"
@@ -80,12 +97,12 @@ class TrainingNode(Base):
 
     # Controle de liberação (somente admin/organizador pode alterar)
     is_released = Column(Boolean, default=False, nullable=False)
-    released_at = Column(DateTime, nullable=True)   # Se definido, libera na data/hora especificada
+    released_at = Column(UTCDateTime, nullable=True)   # UTC sem tzinfo; a API recebe/devolve fuso explícito
     released_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     activity_id = Column(String, ForeignKey("activities.id", ondelete="SET NULL"), nullable=True)
     activity = relationship("Activity")
-    deadline = Column(DateTime, nullable=True)     # Prazo da atividade associada ao nó
+    deadline = Column(UTCDateTime, nullable=True)  # Prazo da atividade associada ao nó (UTC sem tzinfo)
 
     # Relationships
     questions = relationship("Question", back_populates="node", cascade="all, delete-orphan")
@@ -193,7 +210,7 @@ class Activity(Base):
     description = Column(Text, nullable=True, default="")
     eixo = Column(String, nullable=False)          # "trainee", "vendas", "conexoes", "experiencia", "all"
     accepts_file = Column(Boolean, default=True, nullable=False)  # Se exige envio de arquivo
-    deadline = Column(DateTime, nullable=True)     # None = sem prazo definido
+    deadline = Column(UTCDateTime, nullable=True)  # UTC sem tzinfo; None = sem prazo definido
     is_open = Column(Boolean, default=True, nullable=False)  # Fechamento manual ou automático via deadline
     allow_retry = Column(Boolean, default=True, server_default=true(), nullable=False)
     is_required = Column(Boolean, default=True, server_default=true(), nullable=False)

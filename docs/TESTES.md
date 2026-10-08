@@ -53,6 +53,35 @@ BASE_URL=http://127.0.0.1:3017 node frontend/tests/stabilization.cjs
 
 Verifica sessão expirada, indisponibilidade temporária, preservação de formulários após falha, reenvio de atividades, autoria e vínculo material → atividade → nó, leitura de texto e recursos pelo nó, abertura de conteúdo após desbloquear etapas, atualização ao abrir nós, recuperação de falhas de carregamento, conteúdo ausente e recuperação de senha indisponível.
 
+## Agendamento e prazos
+
+Com o frontend disponível, sem precisar de uma API real:
+
+```bash
+BASE_URL=http://127.0.0.1:3017 node frontend/tests/node_release.cjs
+BASE_URL=http://127.0.0.1:3017 node frontend/tests/deadlines.cjs
+```
+
+`node_release.cjs` intercepta a API e controla o relógio do navegador para verificar fusos, preservação do horário após salvar, edição durante atualização automática, consultas antigas terminando após o salvamento, novas edições durante uma gravação, falha com reenvio, atualização do status na liberação e nova consulta quando a leitura do horário de liberação falha ou chega atrasada (inclusive na trilha do participante). Usa a mesma configuração de Playwright descrita acima; também está disponível como `npm run test:release` no frontend.
+
+`deadlines.cjs` verifica, nos fusos da Bahia e de Kolkata e com respostas antigas sem `Z`, a exibição dos prazos no painel (atividades e trilha), na aba de atividades do trainee e na etapa aberta por trainees e membros, em que o prazo da etapa prevalece sobre o da atividade. Também verifica que salvar a edição de uma atividade ou de um nó sem mexer no prazo mantém o mesmo instante. Disponível como `npm run test:deadlines`.
+
+`test_nodes.py` verifica na API a equivalência entre UTC e outros offsets, retorno com fuso explícito, compatibilidade com registros antigos, recusa de entradas sem fuso, liberação antes/no/depois do instante, pré-requisitos, liberação imediata e revogação. `test_nodes.py` e `test_access.py` cobrem o mesmo contrato para os prazos de nós e de atividades, incluindo o fechamento das entregas exatamente no prazo. Esses testes usam SQLite descartável; não substituem a validação com PostgreSQL de produção.
+
+## Nota mínima, acerto parcial, comemoração e gamificação
+
+Com o frontend disponível, sem precisar de uma API real:
+
+```bash
+BASE_URL=http://127.0.0.1:3017 node frontend/tests/progress_journey.cjs
+```
+
+Verifica o resultado de um questionário com questão parcialmente correta (contagem de alternativas e pontos), o aviso de nota mínima 7 com **Tentar novamente** até concluir a etapa, a comemoração ao concluir a trilha (uma vez por conjunto de etapas, sem contar opcionais e sem balões com movimento reduzido) e a aba **Conquistas** do membro (nível, conquistas e ranking por eixo e geral). Disponível como `npm run test:progress`.
+
+`test_games.py` cobre a nota parcial da seleção múltipla, com o desconto por alternativa incorreta marcada ou correta não marcada (inclusive os exemplos de 33,3% e 50%). `test_assessments.py` cobre a nota mínima nos jogos com repetição (6,9 reprova, 7,0 aprova), o bloqueio da etapa seguinte, a tentativa única concluindo com qualquer nota e o quiz antigo. `test_gamification.py` cobre acesso só de membros, pontos a partir das notas, níveis, conquistas e empates no ranking.
+
+As jornadas `stabilization.cjs`, `assessments_journey.cjs` e `submission_attachments_journey.cjs` concluem a trilha inteira e, por isso, fecham a comemoração antes de continuar.
+
 ## Fila de correções e notas
 
 Com os dois servidores preparados:

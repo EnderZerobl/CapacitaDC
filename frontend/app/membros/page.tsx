@@ -6,10 +6,13 @@ import { useAuth } from "@/lib/auth-context"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { openAuthenticatedFile } from "@/lib/api-client"
 import { LinkedText, safeHref } from "@/components/content/linked-text"
-import { axisLabel, isStaff } from "@/lib/roles"
+import { axisLabel, isStaff, normalizeAxis } from "@/lib/roles"
 import { type ContentItem } from "@/lib/content-data"
+import { asUtcDate } from "@/lib/datetime"
 import { ViewContentCard } from "@/components/content/view-content-card"
 import { TrainingPath } from "@/components/dashboard/training-path"
+import { TrailCelebration } from "@/components/dashboard/trail-celebration"
+import { LevelBadge, MemberProgress } from "@/components/gamification/member-progress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -19,7 +22,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import {
   LayoutGrid, Search, LogOut, User, BookOpen, Compass,
-  FileText, Video, ExternalLink, Award, ClipboardList, Upload, Clock, Link2
+  FileText, Video, ExternalLink, Award, ClipboardList, Upload, Clock, Link2, Trophy
 } from "lucide-react"
 
 import { ActivitySubmissionForm } from "@/components/activities/submission-form"
@@ -29,6 +32,7 @@ import { useNodes, useNodeContent } from "@/features/nodes/hooks"
 import type { TrainingNode } from "@/features/nodes/types"
 import { useActivities } from "@/features/activities/hooks"
 import { useMaterials } from "@/features/materials/hooks"
+import { useGamification } from "@/features/gamification/hooks"
 
 export default function MembrosPage() {
   const router = useRouter()
@@ -38,6 +42,7 @@ export default function MembrosPage() {
   const contents: ContentItem[] = materials as unknown as ContentItem[]
   const { nodes, completeNode, refresh: refreshNodes } = useNodes()
   const { activities, refresh: refreshActivities } = useActivities()
+  const gamification = useGamification(user?.type === "membro")
 
   const [activeTab, setActiveTab] = useState("trilhas")
   const [searchQuery, setSearchQuery] = useState("")
@@ -58,7 +63,7 @@ export default function MembrosPage() {
 
   const refreshProgress = async () => {
     // The submission is already saved; a refresh failure must not be reported as a failed submission.
-    const results = await Promise.allSettled([refreshUser(), refreshNodes(), refreshMaterials(), refreshActivities()])
+    const results = await Promise.allSettled([refreshUser(), refreshNodes(), refreshMaterials(), refreshActivities(), gamification.refresh()])
     results.forEach(result => {
       if (result.status === "rejected") console.error("Erro ao atualizar progresso:", result.reason)
     })
@@ -113,8 +118,12 @@ export default function MembrosPage() {
     return false
   }
 
+  const officialAxis = normalizeAxis(user.eixo)
+
   return (
     <main className="min-h-screen bg-background">
+      {officialAxis && <TrailCelebration userId={user.id} trail={officialAxis} trailName={axisLabel(officialAxis)} personName={user.name}
+        steps={nodes.filter(node => node.eixo === officialAxis)} paused={isReadingMaterial} />}
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4">
@@ -139,6 +148,7 @@ export default function MembrosPage() {
                       {axisLabel(user.eixo)}
                     </Badge>
                   )}
+                  <LevelBadge summary={gamification.summary} />
                 </div>
               )}
               <ThemeToggle />
@@ -168,7 +178,20 @@ export default function MembrosPage() {
               <BookOpen className="h-4 w-4" />
               Biblioteca
             </TabsTrigger>
+            <TabsTrigger value="conquistas" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Trophy className="h-4 w-4" />
+              Conquistas
+            </TabsTrigger>
           </TabsList>
+
+          {/* TAB: Conquistas (pontos, nível e ranking; só para membros) */}
+          <TabsContent value="conquistas" className="space-y-6">
+            <div className="space-y-2">
+              <h2 className="text-2xl font-extrabold text-foreground tracking-tight">Suas conquistas</h2>
+              <p className="text-muted-foreground">Pontos e nível vêm das suas notas. Veja suas conquistas e sua posição entre os membros.</p>
+            </div>
+            <MemberProgress summary={gamification.summary} loading={gamification.loading} error={gamification.error} onRetry={() => void gamification.refresh()} />
+          </TabsContent>
 
           {/* TAB: Trilhas */}
           <TabsContent value="trilhas" className="space-y-8">
@@ -367,7 +390,7 @@ export default function MembrosPage() {
                     )}
                     {(selectedNode?.deadline || relatedActivity.deadline) && (
                       <p className="text-[10px] text-amber-400 light:text-amber-700 flex items-center gap-1 font-semibold">
-                        <Clock className="w-3.5 h-3.5" /> Prazo de entrega: {new Date(selectedNode?.deadline || relatedActivity.deadline).toLocaleString("pt-BR")}
+                        <Clock className="w-3.5 h-3.5" /> Prazo de entrega: {asUtcDate(selectedNode?.deadline || relatedActivity.deadline).toLocaleString("pt-BR")}
                       </p>
                     )}
 

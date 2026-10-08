@@ -8,6 +8,13 @@
 //     node frontend/tests/assessments_journey.cjs
 const assert = require("node:assert/strict")
 
+// Concluir a última etapa abre a comemoração da trilha depois do diálogo da etapa.
+async function closeCelebration(page) {
+  const celebration = page.getByRole("dialog", { name: /^Parabéns/ })
+  await celebration.getByRole("button", { name: "Continuar" }).click()
+  await celebration.waitFor({ state: "hidden" })
+}
+
 let playwright
 if (process.env.PLAYWRIGHT_PACKAGE) {
   playwright = require(process.env.PLAYWRIGHT_PACKAGE)
@@ -121,11 +128,12 @@ async function main() {
 
     // Trainee entrega a atividade uma única vez.
     await trainee.getByRole("button", { name: activityNode.name, exact: true }).click()
-    let dialog = trainee.getByRole("dialog")
+    let dialog = trainee.getByRole("dialog").filter({ hasNot: trainee.getByRole("heading", { name: /^Parabéns/ }) })
     await dialog.getByText("Obrigatória · peso 2 · Envio único", { exact: true }).waitFor()
     await dialog.getByPlaceholder("Adicione observações...").fill("Minha entrega")
     await dialog.getByRole("button", { name: "Enviar atividade e concluir etapa", exact: true }).click()
     await dialog.waitFor({ state: "hidden" })
+    await closeCelebration(trainee)
     await trainee.getByRole("button", { name: activityNode.name, exact: true }).click()
     await dialog.getByText("Atividade já enviada. A repetição não está permitida.", { exact: true }).waitFor()
     assert.equal(await dialog.getByRole("button", { name: /Atualizar envio|Enviar atividade/ }).count(), 0)
@@ -153,7 +161,7 @@ async function main() {
     nodes = await call(admin, "GET", "/api/nodes")
     assert.equal(nodes.find(node => node.id === created.id).allow_retry, true)
     await trainee.goto(`${baseURL}/trilha/${created.id}/jogar`)
-    await trainee.getByText("Obrigatório · peso 3 · Repetição permitida · vale a melhor nota", { exact: true }).waitFor()
+    await trainee.getByText("Obrigatório · peso 3 · Repetição permitida · vale a melhor nota · nota mínima 7 para avançar", { exact: true }).waitFor()
     await trainee.getByLabel("Errada", { exact: true }).check()
     await trainee.getByRole("button", { name: "Concluir questionário", exact: true }).click()
     await trainee.getByText("Nota: 0.00 / 10", { exact: true }).waitFor()

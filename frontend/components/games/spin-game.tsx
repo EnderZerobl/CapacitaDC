@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, Loader2 } from "lucide-react"
 import type { GameAnswer, GameResult, Question } from "@/features/nodes/types"
+import { MinimumGradeNotice } from "./game-play-content"
 
 interface SpinGameProps {
   nodeName: string
@@ -58,17 +59,19 @@ export function SpinGame({ nodeName, allowRetry = true, questions = [], onComple
   }
 
   if (result) {
+    const pending = result.min_grade != null && result.step_completed === false
     return (
       <Card className="w-full border-primary/20">
         <CardHeader className="text-center">
           <CheckCircle2 className="w-12 h-12 mx-auto text-primary" />
-          <CardTitle>Jogo concluído!</CardTitle>
+          <CardTitle>{pending ? "Tentativa concluída" : "Jogo concluído!"}</CardTitle>
           <p className="text-sm text-muted-foreground">{nodeName}</p>
         </CardHeader>
         <CardContent className="space-y-6">
           <p className="text-center text-sm text-muted-foreground">Seu progresso foi registrado.</p>
           {result.grade != null && <p className="text-center text-lg font-semibold">Nota desta tentativa: {result.grade.toFixed(2)} / 10</p>}
           {result.best_grade != null && <p className="text-center text-sm text-muted-foreground">Melhor nota: {result.best_grade.toFixed(2)} / 10</p>}
+          <MinimumGradeNotice minGrade={result.min_grade} stepCompleted={result.step_completed} bestGrade={result.best_grade} />
           <div className="space-y-3">
             {result.feedback.map((item, index) => {
               const question = questions.find(question => question.id === item.question_id)
@@ -87,8 +90,8 @@ export function SpinGame({ nodeName, allowRetry = true, questions = [], onComple
               )
             })}
           </div>
-          {allowRetry ? <Button variant="outline" className="w-full" onClick={() => { setResult(null); setAnswers({}); setCurrentIndex(0) }}>Repetir jogo</Button> : <p className="text-sm text-muted-foreground">A repetição deste jogo não está permitida.</p>}
-          <Button className="w-full" onClick={onClose}>Voltar à trilha</Button>
+          {allowRetry ? <Button variant={pending ? "default" : "outline"} className="w-full" onClick={() => { setResult(null); setAnswers({}); setCurrentIndex(0) }}>{pending ? "Tentar novamente" : "Repetir jogo"}</Button> : <p className="text-sm text-muted-foreground">A repetição deste jogo não está permitida.</p>}
+          <Button variant={pending ? "outline" : "default"} className="w-full" onClick={onClose}>Voltar à trilha</Button>
         </CardContent>
       </Card>
     )

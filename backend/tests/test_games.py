@@ -195,15 +195,22 @@ class GameTests(unittest.TestCase):
             self.assertEqual(db.query(models.GameAttempt).count(), 1)
             self.assertEqual(db.query(models.UserNodeProgress).count(), 0)
 
-    def test_quiz_exact_selection_normalization_and_retry_idempotency(self):
+    def test_quiz_partial_credit_normalization_and_retry_idempotency(self):
         node = self.node()
         attempt = self.begin(node)
         answers = {"answers": [{"question_id": "q1", "option_ids": ["a"]}, {"question_id": "q2", "option_ids": ["c"]}]}
         status, partial = self.request("POST", f"/api/game-attempts/{attempt['id']}/complete", answers, role="membro")
         self.assertEqual(status, 200, partial)
-        self.assertEqual(partial["result"]["attempt_score"], 25)
-        self.assertEqual(partial["result"]["score_added"], 25)
+        # q1: 1 of 1; q2: one of two right choices = half of its weight 3 → 2.5 of 4.
+        self.assertEqual(partial["result"]["attempt_score"], 63)
+        self.assertEqual(partial["result"]["grade"], 6.25)
+        self.assertEqual(partial["result"]["score_added"], 63)
         self.assertEqual(partial["result"]["feedback"][0]["explanation"], "Explicação 1")
+        self.assertEqual(partial["result"]["feedback"][0]["status"], "correct")
+        self.assertEqual({key: partial["result"]["feedback"][1][key] for key in
+                          ["status", "is_correct", "correct_selected", "correct_total", "wrong_selected", "score", "max_score"]},
+                         {"status": "partial", "is_correct": False, "correct_selected": 1, "correct_total": 2,
+                          "wrong_selected": 0, "score": 1.5, "max_score": 3})
         status, repeated = self.request("POST", f"/api/game-attempts/{attempt['id']}/complete", answers, role="membro")
         self.assertEqual(repeated, partial)
         next_attempt = self.begin(node)
@@ -211,13 +218,57 @@ class GameTests(unittest.TestCase):
         status, perfect = self.complete(next_attempt)
         self.assertEqual(status, 200, perfect)
         self.assertEqual(perfect["result"]["attempt_score"], 100)
-        self.assertEqual(perfect["result"]["score_added"], 75)
+        self.assertEqual(perfect["result"]["score_added"], 37)
         status, worse = self.complete(self.begin(node), correct=False)
         self.assertEqual(worse["result"]["score_added"], 0)
         self.assertEqual(worse["result"]["total_score"], 100)
         with self.api.sessions() as db:
             self.assertEqual(db.query(models.UserNodeProgress).count(), 1)
             self.assertEqual(db.get(models.User, "membro").pontos_acumulados, 100)
+
+    def test_wrong_choices_cancel_right_ones_in_multiple_selection(self):
+        cases = [
+            (["c", "d"], "correct", 3), (["c", "d", "e"], "partial", 1.5),
+            (["c", "e"], "partial", 0), (["e"], "incorrect", 0),
+        ]
+        for selected, status_name, earned in cases:
+            with self.subTest(selected=selected):
+                # Optional steps do not hold the chain, so each case starts unlocked.
+                attempt = self.begin(self.node(is_required=False))
+                status, result = self.request("POST", f"/api/game-attempts/{attempt['id']}/complete", {"answers": [
+                    {"question_id": "q1", "option_ids": ["b"]}, {"question_id": "q2", "option_ids": selected}]}, role="membro")
+                self.assertEqual(status, 200, result)
+                question = result["result"]["feedback"][1]
+                self.assertEqual((question["status"], question["score"]), (status_name, earned))
+                self.assertEqual(result["result"]["feedback"][0]["status"], "incorrect")
+                self.assertEqual(result["result"]["grade"], round(10 * earned / 4, 2))
+
+    def test_each_error_costs_a_share_of_the_question(self):
+        """Start at 100%; every wrong option marked or right option left unmarked costs 1/(right options)."""
+        options = lambda right, wrong: [{"id": f"r{i}", "text": f"Certa {i}", "is_correct": True} for i in range(right)] + \
+            [{"id": f"w{i}", "text": f"Errada {i}"} for i in range(wrong)]
+        config = {"questions": [
+            {"id": "tres", "text": "Três corretas", "selection": "multiple", "weight": 1, "options": options(3, 2)},
+            {"id": "duas", "text": "Duas corretas", "selection": "multiple", "weight": 1, "options": options(2, 2)},
+        ]}
+        game = self.create("games", {"title": "Exemplos", "instructions": "", "eixo": "vendas", "format": "quiz", "config": config})
+        status, game = self.request("POST", f"/api/games/{game['id']}/publish", {})
+        self.assertEqual(status, 200, game)
+        node = self.create("nodes", {"type": "game", "eixo": "vendas", "game_revision_id": game["published_revision"]["id"],
+                                     "is_released": True, "is_required": False})
+        cases = [
+            # (três corretas, duas corretas) → (porcentagem da 1ª, porcentagem da 2ª)
+            ((["r0", "r1", "w0"], ["r0", "r1", "w0"]), (0.33, 0.5)),  # 1 faltando + 1 errada; só 1 errada
+            ((["r0", "r1"], ["r0"]), (0.67, 0.5)),                     # só faltam corretas
+            ((["r0", "r1", "r2"], ["r0", "r1"]), (1, 1)),
+            ((["r0", "w0", "w1"], ["r0", "w0"]), (0, 0)),              # erros demais não ficam negativos
+        ]
+        for (three, two), expected in cases:
+            with self.subTest(three=three, two=two):
+                status, result = self.request("POST", f"/api/game-attempts/{self.begin(node)['id']}/complete", {"answers": [
+                    {"question_id": "tres", "option_ids": three}, {"question_id": "duas", "option_ids": two}]}, role="membro")
+                self.assertEqual(status, 200, result)
+                self.assertEqual(tuple(item["score"] for item in result["result"]["feedback"]), expected)
 
     def test_forged_choices_scores_and_incomplete_quizzes_are_rejected(self):
         attempt = self.begin(self.node())

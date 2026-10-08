@@ -67,9 +67,11 @@ def graded_pairs(db: Session, user_id: str, eixos: set[str] | None = None) -> li
     submissions = db.query(models.ActivitySubmission, models.Activity).join(
         models.Activity, models.Activity.id == models.ActivitySubmission.activity_id,
     ).filter(models.ActivitySubmission.user_id == user_id, models.Activity.is_required.is_(True))
+    # A graded game counts even below the minimum grade that concludes its step:
+    # the best grade so far is the person's result until a retry improves it.
     games = db.query(models.UserNodeProgress, models.TrainingNode).join(
         models.TrainingNode, models.TrainingNode.id == models.UserNodeProgress.node_id,
-    ).filter(models.UserNodeProgress.user_id == user_id, models.UserNodeProgress.completed.is_(True),
+    ).filter(models.UserNodeProgress.user_id == user_id,
              models.UserNodeProgress.grade.isnot(None), models.TrainingNode.type == "game",
              models.TrainingNode.is_required.is_(True))
     if eixos is not None:

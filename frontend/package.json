@@ -9,6 +9,9 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test:ui": "node tests/stabilization.cjs",
+    "test:release": "node tests/node_release.cjs",
+    "test:deadlines": "node tests/deadlines.cjs",
+    "test:progress": "node tests/progress_journey.cjs",
     "test:games": "node tests/games_journey.cjs"
   },
   "dependencies": {

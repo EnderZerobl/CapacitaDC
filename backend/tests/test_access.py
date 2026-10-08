@@ -1,5 +1,6 @@
 """Regression tests for sessions, content permissions and activity delivery."""
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import test_creation
@@ -74,6 +75,77 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIsNone(updated['deadline'])
         self.assertIsNone(updated['material_id'])
+
+    def test_activity_deadline_offsets_are_stored_as_the_same_utc_instant(self):
+        activity = self.create('activities', {'title': 'Atividade', 'eixo': 'trainee', 'deadline': '2030-01-02T14:00:00-03:00'})
+        self.assertEqual(activity['deadline'], '2030-01-02T17:00:00Z')
+        path = f"/api/activities/{activity['id']}"
+        for value in ['2030-01-02T17:30:00Z', '2030-01-02T14:30:00-03:00', '2030-01-02T23:00:00+05:30']:
+            with self.subTest(value=value):
+                status, updated = self.request('PATCH', path, {'deadline': value})
+                self.assertEqual(status, 200, updated)
+                self.assertEqual(updated['deadline'], '2030-01-02T17:30:00Z')
+                with self.api.sessions() as db:
+                    stored = db.get(models.Activity, activity['id']).deadline
+                    self.assertEqual(stored, datetime(2030, 1, 2, 17, 30))
+                    self.assertIsNone(stored.tzinfo)
+                for role in ['admin', 'trainee']:
+                    _, listing = self.request('GET', '/api/activities', role=role)
+                    self.assertEqual(listing[0]['deadline'], updated['deadline'])
+                # Saving the edit form without changes re-sends the returned value.
+                status, repeated = self.request('PATCH', path, {'deadline': updated['deadline']})
+                self.assertEqual(status, 200)
+                self.assertEqual(repeated['deadline'], updated['deadline'])
+
+    def test_activity_deadline_without_timezone_is_rejected(self):
+        status, result = self.request('POST', '/api/activities', {
+            'title': 'Atividade', 'eixo': 'trainee', 'deadline': '2030-01-02T14:00:00',
+        })
+        self.assertEqual(status, 422, result)
+        self.assertEqual(result['detail'][0]['loc'], ['body', 'deadline'])
+        self.assertIn('fuso horário', result['detail'][0]['msg'])
+        activity = self.create('activities', {'title': 'Atividade', 'eixo': 'trainee', 'deadline': '2030-01-02T17:00:00Z'})
+        for value in ['2030-01-03T14:00:00', '2030-01-03']:
+            with self.subTest(value=value):
+                status, result = self.request('PATCH', f"/api/activities/{activity['id']}", {'deadline': value})
+                self.assertEqual(status, 422, result)
+                self.assertEqual(result['detail'][0]['loc'], ['body', 'deadline'])
+        with self.api.sessions() as db:
+            self.assertEqual(db.query(models.Activity).count(), 1)
+            self.assertEqual(db.get(models.Activity, activity['id']).deadline, datetime(2030, 1, 2, 17))
+
+    def test_legacy_deadlines_are_explicit_utc_in_responses(self):
+        activity = self.create('activities', {'title': 'Atividade', 'eixo': 'trainee', 'accepts_file': False})
+        node = self.create('nodes', {'type': 'activity', 'eixo': 'trainee', 'activity_id': activity['id'], 'is_released': True})
+        with self.api.sessions() as db:
+            db.get(models.Activity, activity['id']).deadline = datetime(2030, 1, 2, 17)
+            db.get(models.TrainingNode, node['id']).deadline = datetime(2030, 1, 3, 17)
+            db.commit()
+        _, listing = self.request('GET', '/api/activities', role='trainee')
+        self.assertEqual(listing[0]['deadline'], '2030-01-02T17:00:00Z')
+        _, nodes = self.request('GET', '/api/nodes', role='trainee')
+        self.assertEqual(nodes[0]['deadline'], '2030-01-03T17:00:00Z')
+        status, content = self.request('GET', f"/api/nodes/{node['id']}/content", role='trainee')
+        self.assertEqual(status, 200, content)
+        self.assertEqual(content['node']['deadline'], '2030-01-03T17:00:00Z')
+        self.assertEqual(content['activity']['deadline'], '2030-01-02T17:00:00Z')
+        with self.api.sessions() as db:
+            self.assertEqual(db.get(models.Activity, activity['id']).deadline, datetime(2030, 1, 2, 17))
+
+    def test_submissions_close_at_the_deadline_instant(self):
+        activity = self.create('activities', {
+            'title': 'Atividade', 'eixo': 'trainee', 'accepts_file': False, 'deadline': '2030-01-02T14:00:00-03:00',
+        })
+        node = self.create('nodes', {'type': 'activity', 'eixo': 'trainee', 'activity_id': activity['id'], 'is_released': True})
+        deadline = datetime(2030, 1, 2, 17, tzinfo=timezone.utc)
+        for delta, is_open in [(timedelta(microseconds=-1), True), (timedelta(), False), (timedelta(microseconds=1), False)]:
+            with self.subTest(delta=delta), patch('app.services.activity_service.datetime') as clock:
+                clock.now.return_value = deadline + delta
+                _, listing = self.request('GET', '/api/activities', role='trainee')
+                self.assertEqual(listing[0]['effective_open'], is_open)
+                status, result = self.request('POST', f"/api/activities/{activity['id']}/submit",
+                                              {'node_id': node['id'], 'comment': 'Entrega'}, role='trainee')
+                self.assertEqual(status, 200 if is_open else 400, result)
 
     def test_delivery_completes_only_the_selected_available_node(self):
         activity = self.create('activities', {'title': 'Atividade', 'eixo': 'trainee', 'accepts_file': False})

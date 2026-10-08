@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import engine
 from app import models
-from app.api import auth, users, materials, nodes, activities, grades, games
+from app.api import auth, users, materials, nodes, activities, grades, games, gamification
 from app.migrations import migrate
 
 # Ensure all tables exist (idempotent — safe to run every startup)
@@ -56,3 +56,4 @@ app.include_router(nodes.router,      prefix="/api/nodes",      tags=["nodes"])
 app.include_router(activities.router, prefix="/api/activities", tags=["activities"])
 app.include_router(grades.router,     prefix="/api",            tags=["grades"])
 app.include_router(games.router,      prefix="/api",            tags=["games"])
+app.include_router(gamification.router, prefix="/api/gamification", tags=["gamification"])

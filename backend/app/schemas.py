@@ -1,8 +1,27 @@
-from typing import Optional, List, Literal
-from datetime import datetime
-from pydantic import BaseModel, EmailStr, ConfigDict, Field, model_validator
+from typing import Annotated, Optional, List, Literal
+from datetime import datetime, timezone
+from pydantic import AfterValidator, BaseModel, EmailStr, ConfigDict, Field, model_validator
 
 Role = Literal["admin", "organizador", "gerente", "membro", "trainee"]
+
+
+def _instant_in(value: datetime) -> datetime:
+    # Without an offset the client could mean UTC or its own local time.
+    if value.utcoffset() is None:
+        raise ValueError("Informe o fuso horário (Z ou um deslocamento como -03:00).")
+    return value.astimezone(timezone.utc)
+
+
+def _instant_out(value: datetime) -> datetime:
+    # The columns store UTC without tzinfo, including legacy rows.
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+# Release times and deadlines: requests must state the timezone; responses always do.
+UtcInstantIn = Annotated[datetime, AfterValidator(_instant_in)]
+UtcInstantOut = Annotated[datetime, AfterValidator(_instant_out)]
 
 # --- User Schemas ---
 class UserBase(BaseModel):
@@ -149,8 +168,8 @@ class TrainingNodeOut(BaseModel):
     order_index: int = 0
     questions: List[QuestionOut] = []
     is_released: bool = False
-    released_at: Optional[datetime] = None
-    deadline: Optional[datetime] = None
+    released_at: Optional[UtcInstantOut] = None
+    deadline: Optional[UtcInstantOut] = None
     released_by: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -177,7 +196,7 @@ class TrainingNodeUpdate(BaseModel):
     reference_id: Optional[str] = None
     game_revision_id: Optional[str] = None
     prerequisite_node_id: Optional[str] = None
-    deadline: Optional[datetime] = None
+    deadline: Optional[UtcInstantIn] = None
 
     @model_validator(mode="after")
     def assessment_not_null(self):
@@ -189,7 +208,7 @@ class TrainingNodeUpdate(BaseModel):
 
 class NodeReleaseUpdate(BaseModel):
     is_released: bool
-    released_at: Optional[datetime] = None  # None = liberar imediatamente
+    released_at: Optional[UtcInstantIn] = None  # None = liberar imediatamente
 
 class OptionCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -219,7 +238,7 @@ class TrainingNodeCreate(AssessmentSettings):
     game_revision_id: Optional[str] = None
     prerequisite_node_id: Optional[str] = None
     is_released: bool = False
-    deadline: Optional[datetime] = None
+    deadline: Optional[UtcInstantIn] = None
     questions: List[QuestionCreate] = []
 
     @model_validator(mode="after")
@@ -257,7 +276,7 @@ class ActivityCreate(AssessmentSettings):
     description: Optional[str] = ""
     eixo: str  # "trainee", "vendas", "conexoes", "experiencia", "all"
     accepts_file: bool = True
-    deadline: Optional[datetime] = None
+    deadline: Optional[UtcInstantIn] = None
     material_id: Optional[str] = None
     weight: float = Field(default=1.0, ge=0, allow_inf_nan=False)
 
@@ -265,7 +284,7 @@ class ActivityUpdate(BaseModel):
     allow_retry: Optional[bool] = None
     is_required: Optional[bool] = None
     is_open: Optional[bool] = None
-    deadline: Optional[datetime] = None
+    deadline: Optional[UtcInstantIn] = None
     title: Optional[str] = None
     description: Optional[str] = None
     accepts_file: Optional[bool] = None
@@ -331,7 +350,7 @@ class ActivityOut(BaseModel):
     description: Optional[str] = ""
     eixo: str
     accepts_file: bool
-    deadline: Optional[datetime] = None
+    deadline: Optional[UtcInstantOut] = None
     is_open: bool
     weight: float = 1.0
     allow_retry: bool = True

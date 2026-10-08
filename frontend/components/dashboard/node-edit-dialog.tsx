@@ -12,7 +12,7 @@ import type { TrainingNode } from "@/features/nodes/types"
 import type { Activity } from "@/features/activities/types"
 import type { Material } from "@/features/materials/types"
 import { AssessmentSettings, type AssessmentValues } from "@/components/activities/assessment-settings"
-import { utcToLocalInput } from "@/features/nodes/hooks"
+import { utcToLocalInput } from "@/lib/datetime"
 
 export function NodeEditDialog({ node, nodes, activities, materials, onClose, onSaved }: {
   node: TrainingNode; nodes: TrainingNode[]; activities: Activity[]; materials: Material[]

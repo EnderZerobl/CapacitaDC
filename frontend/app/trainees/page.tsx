@@ -8,8 +8,10 @@ import { openAuthenticatedFile } from "@/lib/api-client"
 import { LinkedText, safeHref } from "@/components/content/linked-text"
 import { isStaff } from "@/lib/roles"
 import { type ContentItem } from "@/lib/content-data"
+import { asUtcDate } from "@/lib/datetime"
 import { ViewContentCard } from "@/components/content/view-content-card"
 import { TrainingPath } from "@/components/dashboard/training-path"
+import { TrailCelebration } from "@/components/dashboard/trail-celebration"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -98,6 +100,7 @@ export default function TraineesPage() {
 
   return (
     <main className="min-h-screen bg-background">
+      <TrailCelebration userId={user.id} trail="trainee" trailName="Trainee" personName={user.name} steps={nodes} paused={isReadingMaterial} />
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4">
@@ -250,7 +253,7 @@ export default function TraineesPage() {
                         {activity.deadline && (
                           <p className="text-[10px] text-amber-400 light:text-amber-700 flex items-center gap-1 mt-1">
                             <Clock className="h-3 w-3" />
-                            Prazo: {new Date(activity.deadline).toLocaleString("pt-BR")}
+                            Prazo: {asUtcDate(activity.deadline).toLocaleString("pt-BR")}
                           </p>
                         )}
                       </CardHeader>
@@ -415,7 +418,7 @@ export default function TraineesPage() {
                     )}
                     {(selectedNode?.deadline || relatedActivity.deadline) && (
                       <p className="text-[10px] text-amber-400 light:text-amber-700 flex items-center gap-1 font-semibold">
-                        <Clock className="w-3.5 h-3.5" /> Prazo de entrega: {new Date(selectedNode?.deadline || relatedActivity.deadline).toLocaleString("pt-BR")}
+                        <Clock className="w-3.5 h-3.5" /> Prazo de entrega: {asUtcDate(selectedNode?.deadline || relatedActivity.deadline).toLocaleString("pt-BR")}
                       </p>
                     )}
 

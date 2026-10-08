@@ -74,6 +74,9 @@ export interface GameAnswer {
 export interface GameResult {
   grade?: number
   best_grade?: number
+  /** Best grade that concludes a repeatable game; null when any grade concludes it. */
+  min_grade?: number | null
+  step_completed?: boolean
   detail: string
   attempt_score: number
   max_score: number
