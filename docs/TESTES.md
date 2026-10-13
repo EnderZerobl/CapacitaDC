@@ -17,7 +17,7 @@ npm run build
 
 O CI do GitHub (`.github/workflows/ci.yml`) roda esses mesmos passos em cada PR e em cada push em `main`: ruff e testes do backend; lint, tipos e build do frontend. O lint falha só com erros; os avisos de `any` explícito e de `setState` em efeitos ainda são tolerados.
 
-As suítes cobrem autenticação, permissões, criação e contratos das rotas, conteúdo bloqueado, conclusão das etapas, avaliação dos cinco formatos de jogos, tentativas repetidas, publicações, migrações, média ponderada e fila de correção. `test_access.py` também cobre a ausência de cadastro público, o bloqueio do login após 5 senhas erradas, a resposta igual para e-mail inexistente e o tamanho mínimo de senha; `test_managers.py` cobre a conferência da assinatura dos arquivos enviados. `test_batch_grading.py` cobre a correção em lote (tudo ou nada, média recalculada) e o registro das correções no histórico; `test_profile.py` cobre Meu perfil (nome, troca de senha derrubando sessões antigas, foto e quem pode vê-la), o aviso de troca de senha e as sugestões.
+As suítes cobrem autenticação, permissões, criação e contratos das rotas, conteúdo bloqueado, conclusão das etapas, avaliação automática dos cinco formatos originais e correção manual de respostas abertas, tentativas repetidas, publicações, migrações, média ponderada e fila de correção. `test_access.py` também cobre a ausência de cadastro público, o bloqueio do login após 5 senhas erradas, a resposta igual para e-mail inexistente e o tamanho mínimo de senha; `test_managers.py` cobre a conferência da assinatura dos arquivos enviados. `test_batch_grading.py` cobre a correção em lote (tudo ou nada, média recalculada) e o registro das correções no histórico; `test_profile.py` cobre Meu perfil (nome, troca de senha derrubando sessões antigas, foto e quem pode vê-la), o aviso de troca de senha e as sugestões.
 
 `test_managers.py` cobre o gerente por eixo com dados descartáveis para os três eixos: nomeação pelo administrador e eixo obrigatório; gestão do PlugInfo (trainees, rotação, conteúdo e correções do eixo `trainee`) sem promoção de trainees; cada gerente contra os outros dois eixos, por listagem e por ID; requisições manipuladas (promoção, troca de eixo ou cargo, edição de outros gerentes); conteúdo `all`/`trainee` e vínculos cruzados; vínculos antigos compartilhados; correções que exigem membro e atividade do eixo; notas e perfil contados só no eixo; participantes sem acesso à lista de pessoas; nomes de eixo antigos equivalentes aos códigos e eixo desconhecido sem acesso; mudança de papel valendo para a sessão aberta; biblioteca com três etapas alcançadas de dez, agendamento, pré-requisito pendente, múltiplos vínculos e trilha não autorizada; e download de documentos por URL direta.
 
@@ -202,3 +202,18 @@ BASE_URL=http://127.0.0.1:3027 node frontend/tests/achievements_journey.cjs
 ```
 
 A jornada cria uma conta e dois jogos no banco descartável. Verifica o popup conjunto, a tentativa de confirmação após uma falha temporária, a lista de dez conquistas e a ausência do mesmo aviso em outro navegador. Disponível como `npm run test:achievements`.
+
+
+## Questionários abertos e organização por eixo
+
+`test_open_responses.py` cobre publicação, sigilo das orientações, respostas completas e imutáveis, pendência sem nota ou pontos, correção ponderada, repetição, edição de notas, idempotência, auditoria, dashboards, prazos de envio e correção, isolamento por eixo e participante e migração 12 sem perda de tentativas existentes.
+
+Com a API descartável em um banco novo e o frontend apontando para ela:
+
+```bash
+BASE_URL=http://127.0.0.1:3043 node frontend/tests/open_responses_journey.cjs
+```
+
+Também disponível como `npm run test:open-responses` dentro do frontend. Usa as contas `admin@example.com` e `trainee@example.com`, senha `qa-test-password`; pode substituí-las por `ADMIN_EMAIL`, `TRAINEE_EMAIL` e `PASSWORD`.
+
+A jornada verifica autoria de duas perguntas com pesos, publicação e prévia sem pontuação, grupos e filtro de eixo na biblioteca de jogos, criação do nó, materiais por eixo e tipo, respostas preservadas ao recarregar, estado aguardando correção sem edição, bloqueio da próxima etapa, falha de salvamento sem perder notas digitadas, correção com feedback, desbloqueio da trilha, resultado após recarregar, dashboard de médias por pergunta e nova tentativa. A tela do participante é conferida em largura de celular. O banco é descartável e recebe conteúdo de teste.

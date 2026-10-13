@@ -203,7 +203,7 @@ class TrainingNodeOut(BaseModel):
     type: str  # "activity", "material", "game"
     reference_id: Optional[str] = None
     game_revision_id: Optional[str] = None
-    game_format: Optional[Literal["quiz", "scenario", "matching", "ordering", "categorization"]] = None
+    game_format: Optional[Literal["quiz", "open_response", "scenario", "matching", "ordering", "categorization"]] = None
     allow_retry: bool = True
     is_required: bool = True
     weight: float = 1.0
@@ -225,6 +225,7 @@ class TrainingNodeGraphOut(TrainingNodeOut):
     # Pré-requisito que vale de fato: o escolhido à mão ou a etapa anterior do eixo.
     effective_prerequisite_id: Optional[str] = None
     completed: bool = False
+    pending_review: bool = False
     unlocked: bool = True
     user_score: int = 0
     grade: Optional[float] = None

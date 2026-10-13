@@ -2,14 +2,15 @@
 
 from copy import deepcopy
 from datetime import datetime, timezone
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app import game_schemas as schemas, models
 from app.auth import get_current_staff, get_current_user
 from app.database import get_db
-from app.services import access, audit, game_service
+from app.services import access, audit, game_service, open_response_service
 
 router = APIRouter()
 
@@ -129,8 +130,8 @@ def list_revisions(game_id: str, db: Session = Depends(get_db), user: models.Use
 
 
 @router.post("/nodes/{node_id}/attempts")
-def begin_attempt(node_id: str, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    return game_service.begin_attempt(db, node_id, user)
+def begin_attempt(node_id: str, new_attempt: bool = False, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    return game_service.begin_attempt(db, node_id, user, new_attempt=new_attempt)
 
 
 @router.get("/game-attempts/{attempt_id}")
@@ -146,3 +147,19 @@ def answer_scenario(attempt_id: str, payload: schemas.ScenarioAnswer, db: Sessio
 @router.post("/game-attempts/{attempt_id}/complete")
 def complete_attempt(attempt_id: str, payload: schemas.AttemptComplete, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     return game_service.complete_attempt(db, attempt_id, user, payload)
+
+
+@router.get("/game-reviews")
+def list_reviews(
+    status: Literal["pending", "graded", "all"] = "pending",
+    eixo: str | None = None, user_type: Literal["trainee", "membro", "all"] = "all",
+    limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db), user: models.User = Depends(get_current_staff),
+):
+    return open_response_service.list_reviews(db, user, status=status, eixo=eixo, user_type=user_type, limit=limit, offset=offset)
+
+
+@router.post("/game-reviews/{attempt_id}/grade")
+def grade_review(attempt_id: str, payload: schemas.OpenResponseGrade,
+                 db: Session = Depends(get_db), user: models.User = Depends(get_current_staff)):
+    return open_response_service.grade_attempt(db, attempt_id, user, payload)

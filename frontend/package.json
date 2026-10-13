@@ -13,6 +13,7 @@
     "test:deadlines": "node tests/deadlines.cjs",
     "test:progress": "node tests/progress_journey.cjs",
     "test:games": "node tests/games_journey.cjs",
+    "test:open-responses": "node tests/open_responses_journey.cjs",
     "test:corrections": "node tests/corrections_journey.cjs",
     "test:assessments": "node tests/assessments_journey.cjs",
     "test:attachments": "node tests/submission_attachments_journey.cjs",

@@ -158,7 +158,7 @@ export function CorrectionsQueue({ activities, isOrganizer, managerAxis = null, 
       <select aria-label="Atividade" className={`${selectClass} max-w-xs`} value={filters.activity_id ?? ""}
         onChange={event => changeFilters({ ...filters, activity_id: event.target.value || undefined })}>
         <option value="">Todas as atividades</option>
-        {activities.filter(activity => !isOrganizer || activity.eixo === "trainee").map(activity => <option key={activity.id} value={activity.id}>{activity.title}</option>)}
+        {groupByEixo(activities.filter(activity => !isOrganizer || activity.eixo === "trainee")).map(({ eixo, label, items }) => <optgroup key={eixo} label={label}>{items.map(activity => <option key={activity.id} value={activity.id}>{activity.title}</option>)}</optgroup>)}
       </select>
       <Button variant="outline" size="sm" disabled={loading} onClick={() => { setSelected(new Set()); void refresh() }}>Atualizar</Button>
       <Button variant="ghost" size="sm" className="ml-auto text-muted-foreground" onClick={() => setHelpOpen(true)}>

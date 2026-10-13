@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { asUtcDate } from "@/lib/datetime"
+import { groupByEixo } from "@/lib/roles"
 import { AppHeader } from "@/components/app-header"
 import { Library } from "@/components/content/library"
 import { TraineeSuggestions } from "@/components/suggestions/trainee-suggestions"
@@ -122,8 +123,10 @@ export default function TraineesPage() {
                 <p className="text-sm">Nenhuma atividade disponível no momento.</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {activities.map((activity) => {
+              <div className="space-y-8">
+                {groupByEixo(activities).map(({ eixo, label, items }) => <section key={eixo} className="space-y-4">
+                  <h3 className="border-b pb-2 text-base font-semibold">{label}</h3>
+                  {items.map((activity) => {
                   const isOpen = activity.effective_open
                   const submitted = !!activity.my_submission
 
@@ -189,7 +192,7 @@ export default function TraineesPage() {
                       </CardContent>
                     </Card>
                   )
-                })}
+                })}</section>)}
               </div>
             )}
           </TabsContent>

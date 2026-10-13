@@ -75,7 +75,7 @@ export function DashboardsTab() {
         </CardContent>
       </Card>
       <Card>
-        <CardHeader><CardTitle>Acerto por questão</CardTitle><CardDescription>Primeira tentativa concluída de cada pessoa por versão publicada, sem contar as repetições.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Acerto por questão</CardTitle><CardDescription>Primeira tentativa avaliada de cada pessoa por versão publicada. Perguntas abertas mostram a média das notas atribuídas pela gestão.</CardDescription></CardHeader>
         <CardContent className="space-y-4">
           {overview.games.length === 0 ? <p className="text-sm text-muted-foreground">Nenhum jogo nesta trilha.</p> : <>
             <div className="space-y-1"><Label htmlFor="dashboard-game">Jogo</Label>
@@ -106,6 +106,7 @@ function QuestionDetails({ nodeId }: { nodeId: string }) {
   if (!stats.available) return <p className="text-sm text-muted-foreground">Este questionário antigo não guarda acerto por questão. A média do jogo continua disponível.</p>
   if (!stats.revisions.length) return <p className="text-sm text-muted-foreground">Nenhuma tentativa concluída por participantes desta trilha.</p>
   const revision = stats.revisions.find(item => item.revision_id === version) ?? stats.revisions[0]
+  const manual = revision.format === "open_response"
   return <div className="space-y-4">
     <div className="space-y-1"><Label htmlFor="dashboard-version">Versão publicada</Label>
       <select id="dashboard-version" className={selectClass} value={revision.revision_id} onChange={event => setVersion(event.target.value)}>
@@ -113,9 +114,9 @@ function QuestionDetails({ nodeId }: { nodeId: string }) {
       </select>
     </div>
     <p className="text-sm text-muted-foreground">{revision.attempts} primeiras tentativas · média {grade(revision.average_first_grade)}.</p>
-    <MetricChart title="Taxa de acerto por questão" rows={revision.items.map(item => ({ id: item.id, name: item.text || item.id, value: item.correct_rate * 100 }))} max={100} suffix="%" />
-    <Numbers headers={["Questão / item", "Respostas", "Acerto completo", "Pontos obtidos"]} rows={revision.items.map(item => [item.id, item.text || item.id, String(item.answers), percentage(item.correct_rate), percentage(item.score_rate)])} />
-    <p className="text-xs text-muted-foreground">Pontos obtidos inclui o acerto parcial. Nos cenários, acerto é escolher a melhor opção daquele passo; cada passo conta apenas as pessoas que passaram por ele.</p>
+    <MetricChart title={manual ? "Média da nota por pergunta" : "Taxa de acerto por questão"} rows={revision.items.map(item => ({ id: item.id, name: item.text || item.id, value: manual ? (item.score_rate == null ? null : item.score_rate * 10) : (item.correct_rate == null ? null : item.correct_rate * 100) }))} max={manual ? 10 : 100} suffix={manual ? "" : "%"} />
+    <Numbers headers={manual ? ["Pergunta", "Respostas corrigidas", "Nota média"] : ["Questão / item", "Respostas", "Acerto completo", "Pontos obtidos"]} rows={revision.items.map(item => manual ? [item.id, item.text || item.id, String(item.answers), grade(item.score_rate == null ? null : item.score_rate * 10)] : [item.id, item.text || item.id, String(item.answers), percentage(item.correct_rate), percentage(item.score_rate)])} />
+    <p className="text-xs text-muted-foreground">{manual ? "Somente respostas corrigidas entram nestas médias. Envios aguardando correção ficam pendentes." : "Pontos obtidos inclui o acerto parcial. Nos cenários, acerto é escolher a melhor opção daquele passo; cada passo conta apenas as pessoas que passaram por ele."}</p>
   </div>
 }
 

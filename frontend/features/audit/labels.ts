@@ -40,6 +40,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "material.update": "Material editado",
   "material.delete": "Material excluído",
   "game.create": "Jogo criado",
+  "game.grade": "Correção de questionário aberto",
   "game.update": "Rascunho de jogo editado",
   "game.publish": "Jogo publicado",
   "game.duplicate": "Jogo duplicado",
@@ -162,6 +163,7 @@ export function describeAudit(entry: AuditEntry): string {
     case "material.update": return `editou o material ${name}`
     case "material.delete": return `excluiu o material ${name}`
     case "game.create": return `criou o jogo ${name}`
+    case "game.grade": return `corrigiu as respostas abertas de ${person} em ${name}`
     case "game.update": return `editou o rascunho do jogo ${name}`
     case "game.publish": {
       const version = details?.["versão"]

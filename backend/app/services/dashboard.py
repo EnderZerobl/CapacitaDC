@@ -162,15 +162,16 @@ def question_stats(db: Session, actor: models.User, node_id: str) -> dict:
         revision = revisions.get(revision_id)
         items = [{
             "id": stats["id"], "text": stats["text"], "answers": stats["answers"],
-            "correct_rate": round(stats["correct"] / stats["answers"], 4),
+            "correct_rate": None if revision and revision.format == "open_response" else round(stats["correct"] / stats["answers"], 4),
             # Fração média dos pontos da questão (o acerto parcial dos quizzes entra aqui).
             "score_rate": round(stats["score"] / stats["max_score"], 4) if stats["max_score"] else None,
         } for stats in sorted(bucket["items"].values(), key=lambda value: value["order"])]
-        items.sort(key=lambda item: item["correct_rate"])
+        items.sort(key=lambda item: item["score_rate"] or 0 if revision and revision.format == "open_response" else item["correct_rate"])
         result_revisions.append({
             "revision_id": revision_id,
             "version": revision.version if revision else None,
             "title": revision.title if revision else None,
+            "format": revision.format if revision else None,
             "attempts": bucket["attempts"],
             "average_first_grade": round(sum(bucket["grades"]) / len(bucket["grades"]), 2) if bucket["grades"] else None,
             "items": items,

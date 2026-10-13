@@ -31,7 +31,7 @@ export interface QuestionMetric {
   id: string
   text: string
   answers: number
-  correct_rate: number
+  correct_rate: number | null
   score_rate: number | null
 }
 
@@ -39,6 +39,7 @@ export interface RevisionMetrics {
   revision_id: string
   version: number | null
   title: string | null
+  format?: string | null
   attempts: number
   average_first_grade: number | null
   items: QuestionMetric[]

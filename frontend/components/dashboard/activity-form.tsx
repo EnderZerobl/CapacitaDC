@@ -7,7 +7,7 @@ import type { ContentItem } from "@/components/dashboard/content-card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { asUtcDate } from "@/lib/datetime"
-import type { MemberAxis } from "@/lib/roles"
+import { groupByEixo, type MemberAxis } from "@/lib/roles"
 
 export interface ActivityFormValues {
   title: string
@@ -123,7 +123,7 @@ export function ActivityForm({ mode, initial, contents, axis, axisName, isOrg, t
             className={select}
           >
             <option value="">Nenhum</option>
-            {materialOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {groupByEixo(materialOptions).map(({ eixo, label, items }) => <optgroup key={eixo} label={label}>{items.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>)}
           </select>
         </div>
 

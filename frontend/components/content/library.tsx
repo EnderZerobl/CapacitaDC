@@ -6,6 +6,7 @@ import { type ContentItem } from "@/lib/content-data"
 import { ViewContentCard } from "@/components/content/view-content-card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { groupByEixo } from "@/lib/roles"
 
 const AXIS_FILTERS = [
   { id: "todos", name: "Todos" },
@@ -117,13 +118,16 @@ export function Library({ contents, title, description, axisFilter = false, empt
         </div>
       </div>
 
-      <div className="grid gap-4">
+      <div className="space-y-8">
         {filtered.length === 0 ? (
           <div className="text-center py-12 border border-dashed border-border rounded-xl text-muted-foreground text-sm">
             {emptyMessage}
           </div>
         ) : (
-          filtered.map((content) => <ViewContentCard key={content.id} content={content} />)
+          groupByEixo(filtered).map(({ eixo, label, items }) => <section key={eixo} className="space-y-4" aria-label={`Materiais — ${label}`}>
+            <h3 className="border-b border-border pb-2 text-base font-semibold">{label}</h3>
+            <div className="grid gap-4">{items.map(content => <ViewContentCard key={content.id} content={content} />)}</div>
+          </section>)
         )}
       </div>
     </div>

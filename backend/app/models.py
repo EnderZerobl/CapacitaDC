@@ -215,6 +215,11 @@ class GameAttempt(Base):
     result = Column(JSON, nullable=True)
     started_at = Column(UTCDateTime, nullable=False)
     completed_at = Column(UTCDateTime, nullable=True)
+    submitted_at = Column(UTCDateTime, nullable=True)
+    graded_at = Column(UTCDateTime, nullable=True)
+    graded_by_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    graded_by = relationship("User", foreign_keys=[graded_by_id])
+    user = relationship("User", foreign_keys=[user_id])
     node = relationship("TrainingNode", back_populates="game_attempts")
     revision = relationship("GameRevision")
 

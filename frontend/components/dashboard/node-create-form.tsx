@@ -1,5 +1,7 @@
 "use client"
 
+import { groupByEixo } from "@/lib/roles"
+
 import { useEffect, useState } from "react"
 import { Clock } from "lucide-react"
 import { apiClient } from "@/lib/api-client"
@@ -108,11 +110,9 @@ export function NodeCreateForm({ onClose }: { onClose: () => void }) {
                 }}
                 className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-xs text-foreground">
                 <option value="">Selecione uma atividade...</option>
-                {activities
-                  .filter(a => nodeForm.eixo === "all" || a.eixo === "all" || a.eixo === nodeForm.eixo)
-                  .map(a => (
-                    <option key={a.id} value={a.id}>{a.title} — {contents.find(c => c.id === a.material_id)?.name || "Sem material"}</option>
-                  ))}
+                {groupByEixo(activities.filter(a => nodeForm.eixo === "all" || a.eixo === "all" || a.eixo === nodeForm.eixo)).map(({ eixo, label, items }) => <optgroup key={eixo} label={label}>
+                  {items.map(a => <option key={a.id} value={a.id}>{a.title} — {contents.find(c => c.id === a.material_id)?.name || "Sem material"}</option>)}
+                </optgroup>)}
               </select>
             </div>
           )}
@@ -139,11 +139,11 @@ export function NodeCreateForm({ onClose }: { onClose: () => void }) {
               <select id="node-game" value={gameRevisionId} onChange={e => setGameRevisionId(e.target.value)}
                 className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-sm">
                 <option value="">Selecione um jogo...</option>
-                {games.filter(game => game.published_revision && game.eixo === nodeForm.eixo).map(game => (
+                {groupByEixo(games.filter(game => game.published_revision && game.eixo === nodeForm.eixo)).map(({ eixo, label, items }) => <optgroup key={eixo} label={label}>{items.map(game => (
                   <option key={game.id} value={game.published_revision!.id}>
                     {game.published_revision!.title} — {gameFormatLabels[game.format]} (v{game.published_revision!.version})
                   </option>
-                ))}
+                ))}</optgroup>)}
               </select>
               <p className="text-xs text-muted-foreground">Publique o jogo na <button type="button" className="underline" onClick={() => navigate("atividades", "jogos")}>aba Atividades → Jogos</button> para adicioná-lo à trilha.</p>
             </div>
@@ -154,7 +154,7 @@ export function NodeCreateForm({ onClose }: { onClose: () => void }) {
             <select id="node-material" value={nodeForm.reference_id} onChange={event => setNodeForm(previous => ({ ...previous, reference_id: event.target.value }))}
               className="w-full h-9 rounded-md border border-border bg-secondary px-3 text-sm">
               <option value="">Sem material</option>
-              {materials.filter(material => material.eixo === nodeForm.eixo || material.eixo === "all").map(material => <option key={material.id} value={material.id}>{material.name}</option>)}
+              {groupByEixo(materials.filter(material => material.eixo === nodeForm.eixo || material.eixo === "all")).map(({ eixo, label, items }) => <optgroup key={eixo} label={label}>{items.map(material => <option key={material.id} value={material.id}>{material.name}</option>)}</optgroup>)}
             </select>
           </div>}
           <div className="sm:col-span-2 space-y-2">

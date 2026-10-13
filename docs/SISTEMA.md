@@ -170,6 +170,7 @@ O autor cria rascunhos vazios e fornece o conteúdo. A plataforma não gera ativ
 | Formato | Como funciona |
 | --- | --- |
 | Questionário | Perguntas de escolha única ou múltipla, pesos e explicações. Na seleção múltipla, a questão começa valendo 100% do peso e cada erro (alternativa incorreta marcada ou correta não marcada) desconta `100% ÷ número de alternativas corretas`, com mínimo zero. Por exemplo, com 3 corretas, marcar 2 delas e mais 1 incorreta vale 33,3%; com 2 corretas, marcar as 2 e mais 1 incorreta vale 50%; o resultado mostra a questão como correta, parcialmente correta ou incorreta, com quantas corretas foram marcadas. |
+| Questionário aberto | Respostas em texto (até 5.000 caracteres por pergunta), com peso e orientação opcional reservada à gestão. Cada pergunta recebe nota de 0 a 10 e feedback manual; a nota do jogo é a média ponderada das perguntas. |
 | Cenário situacional | Contexto e decisões que conduzem a outros passos ou encerram o caminho. Cada decisão tem pontos e feedback; ciclos e passos inalcançáveis são rejeitados na publicação. |
 | Associação | Relacionar itens de duas listas, com possibilidade de alternativas distratoras. |
 | Ordenação | Colocar cartões na sequência correta. |
@@ -188,6 +189,20 @@ Com repetição permitida, a etapa só é concluída quando a melhor nota chega 
 O prazo da etapa também encerra o jogo: depois dele não se inicia tentativa nem se conclui uma já aberta (inclusive para melhorar a nota), e decisões de cenário são recusadas com "O prazo desta etapa terminou." A melhor nota já obtida continua valendo, e um jogo sem repetição já concluído segue mostrando o resultado. O mesmo vale para quizzes antigos. A pré-visualização da gestão não é afetada.
 
 Cenários salvam as decisões no servidor. Os demais formatos mantêm as escolhas em andamento no navegador para retomada da tentativa; a avaliação é enviada ao concluir. Essa retomada local depende do mesmo navegador. Quizzes antigos continuam funcionando pelo fluxo legado de respostas avaliadas no servidor, com os pesos originais.
+
+### Correção dos questionários abertos
+
+O envio exige todas as perguntas respondidas uma vez e guarda as respostas na versão publicada da tentativa. O estado muda de `in_progress` para `pending_review`: nenhuma nota ou pontuação é atribuída antes da correção. O participante consulta suas respostas em **Aguardando correção**, inclusive depois do prazo, e usa **Atualizar correção** para consultar o resultado. O envio fica imutável e não permite outra tentativa enquanto aguarda a avaliação.
+
+Na aba **Correções → Questionários abertos**, a gestão filtra por situação, eixo e tipo de participante. A lista é paginada e agrupada por eixo. Ao abrir um envio, vê cada resposta e as orientações internas; atribui as notas de todas as perguntas e feedback opcional. Por exemplo, notas 9 e 3 em perguntas com pesos 2 e 1 produzem nota final 7. Uma falha ao salvar mantém os campos preenchidos. As correções de atividades, seus atalhos e a correção em lote continuam na subaba **Atividades**.
+
+O administrador corrige todos os envios; o organizador, apenas os trainees do eixo `trainee`; gerentes, trainees desse eixo e membros do próprio eixo em jogos desse eixo. Ter acesso de gestão ao jogo não autoriza corrigir um membro de outro eixo. Autor, data e alterações da correção entram no histórico, sem copiar as respostas ou as orientações internas.
+
+Salvar a correção conclui a tentativa (`completed`) e recalcula a melhor nota, a média ponderada, os pontos dos membros e os dashboards. Com repetição permitida, a melhor nota precisa chegar a 7 para concluir a etapa; sem repetição, qualquer nota corrigida conclui. A gestão pode corrigir após o prazo, mas o participante só inicia outra tentativa dentro dele. Reabrir um questionário corrigido mostra o resultado; **Repetir jogo** inicia uma nova tentativa explicitamente. Editar uma correção recalcula a melhor nota entre as tentativas e ajusta o progresso e os pontos, inclusive quando a nota é reduzida. Repetir o mesmo salvamento não duplica pontos nem registros no histórico.
+
+### Organização por eixo
+
+Materiais, atividades, jogos, bibliotecas dos participantes e seletores de conteúdo usam a mesma ordem de seções dos nós: **Trainee (Geral), Vendas, Conexões, Experiência do Consumidor e Todos os eixos**. Textos, documentos, vídeos e materiais de apoio acompanham o eixo do material. Buscas e filtros são aplicados antes de agrupar; conteúdos compartilhados continuam em sua própria seção quando aparecem no filtro de um eixo. A organização não amplia a visibilidade dos conteúdos: somente materiais de etapas alcançadas aparecem para participantes.
 
 ### Outros formatos possíveis, ainda não implementados
 
@@ -235,6 +250,7 @@ Diálogos com ramificações já podem ser representados pelo cenário; uma vers
 - `backend/app/services/material_files.py`: autorização dos documentos dos materiais.
 - `backend/app/services/activity_service.py`: média ponderada e serialização de entregas.
 - `backend/app/services/game_service.py`: publicações, tentativas e avaliação.
+- `backend/app/services/open_response_service.py`: fila de respostas abertas e correção manual por pergunta.
 - `backend/app/models.py`, `schemas.py` e `game_schemas.py`: persistência e validação.
 - `backend/app/migrations.py`: evolução versionada do banco.
 
@@ -257,6 +273,7 @@ Rotas principais (consulte `/docs` na API para o contrato completo):
 | Conteúdo da etapa | `GET /api/nodes/{id}/content`, `PATCH /api/nodes/{id}/activity` |
 | Jogos | `GET/POST /api/games`, edição, duplicação, publicação e versões por ID |
 | Tentativas | `POST /api/nodes/{id}/attempts`, leitura e respostas/conclusão em `/api/game-attempts/{id}` |
+| Respostas abertas | `GET /api/game-reviews` (situação, eixo, tipo e paginação), `POST /api/game-reviews/{id}/grade` (notas e feedback por pergunta) |
 | Arquivos | `POST /api/upload`, leitura autorizada pelo material em `GET /api/uploads/{pathname}` |
 
 As coleções aceitam as formas de URL utilizadas no frontend sem redirecionar a autenticação. As sessões novas usam ID de usuário estável no token. Respostas 401 significam sessão inválida, 403 falta de permissão, 422 erro de validação e 5xx falha do servidor. Erro temporário de `/auth/me` não apaga a sessão. A interface mostra o motivo de uma recusa 403 e confere a sessão de novo (também ao voltar para a aba); se papel ou eixo mudaram, o painel se recria sem manter dados do escopo anterior.
@@ -265,7 +282,7 @@ As coleções aceitam as formas de URL utilizadas no frontend sem redirecionar a
 
 A aba **Dashboards** permite selecionar a trilha e consultar conclusão por etapa liberada, média da melhor nota por jogo, quantidade de participantes que jogaram e percentual aprovado (nota 7 ou mais). Cada trilha considera apenas os membros do seu eixo ou os trainees, conforme o público.
 
-O acerto por questão usa a primeira tentativa concluída de cada participante por versão publicada. Repetições não entram; versões ficam separadas. A tabela também mostra a fração dos pontos obtidos, incluindo acerto parcial. Nos cenários, acertar é escolher a melhor opção do passo, e o denominador inclui apenas quem passou por ele. Questionários antigos não possuem esse detalhamento.
+O acerto por questão usa a primeira tentativa concluída de cada participante por versão publicada. Repetições não entram; versões ficam separadas. A tabela também mostra a fração dos pontos obtidos, incluindo acerto parcial. Nos cenários, acertar é escolher a melhor opção do passo, e o denominador inclui apenas quem passou por ele. Questionários antigos não possuem esse detalhamento. Nos questionários abertos, o detalhamento mostra a nota média de cada pergunta pela primeira tentativa corrigida, em vez de uma taxa de acerto automático. Envios ainda pendentes não entram nas médias.
 
 O administrador consulta todas as trilhas; gerentes, seu eixo e o PlugInfo; organizadores, o PlugInfo. As rotas `GET /api/dashboard` e `GET /api/dashboard/games/{node_id}` aplicam essa permissão no servidor. Os gráficos acompanham o tema e incluem tabelas com os números.
 
@@ -291,6 +308,8 @@ A migração 9 passa o prazo para as etapas: guarda os prazos das atividades em 
 A migração 10 cria `audit_logs` e acrescenta autor e data da correção às entregas (`graded_by_id` e `graded_at`). Correções antigas continuam sem autor identificado.
 
 A migração 11 cria `member_achievement_states` para registrar a primeira consulta e os avisos de conquistas já vistos. Ela não recalcula nem altera pontos e notas.
+
+A migração 12 acrescenta `submitted_at`, `graded_at` e `graded_by_id` às tentativas de jogos e cria um índice para a fila de correções. Tentativas e resultados existentes são preservados; os cinco formatos anteriores seguem com avaliação automática.
 
 O papel de gerente reaproveita as colunas `users.type` e `users.eixo` e não exige migração de dados: nomes de eixo antigos são normalizados na leitura e convertidos para o código na próxima gravação. A tabela `material_uploads` é criada na inicialização como as demais tabelas novas.
 

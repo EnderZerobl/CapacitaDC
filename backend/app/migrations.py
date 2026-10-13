@@ -241,3 +241,14 @@ def migrate(engine):
             # create_all cria member_achievement_states. A primeira consulta de cada
             # membro guarda as conquistas existentes como vistas, sem emitir popups.
             connection.execute(text("INSERT INTO schema_migrations(version) VALUES (11)"))
+
+        if 12 not in applied:
+            columns = {column["name"] for column in inspect(connection).get_columns("game_attempts")}
+            for name, definition in {"submitted_at": "TIMESTAMP", "graded_at": "TIMESTAMP",
+                                     "graded_by_id": "VARCHAR REFERENCES users(id) ON DELETE SET NULL"}.items():
+                if name not in columns:
+                    connection.execute(text(f"ALTER TABLE game_attempts ADD COLUMN {name} {definition}"))
+            connection.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_game_attempts_review ON game_attempts (status, submitted_at)"
+            ))
+            connection.execute(text("INSERT INTO schema_migrations(version) VALUES (12)"))
